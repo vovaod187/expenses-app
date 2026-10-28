@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Траты</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  body { font-family: sans-serif; margin: 0; padding: 16px;
+         background: var(--tg-theme-bg-color, #fff); color: var(--tg-theme-text-color, #000); }
+  nav { display: flex; gap: 8px; margin-bottom: 8px; }
+  nav button { flex: 1; margin: 0; padding: 10px; font-size: 16px; background: #8883; color: inherit; }
+  nav button.active { background: var(--tg-theme-button-color, #2481cc); color: var(--tg-theme-button-text-color, #fff); }
+  label { display: block; margin: 14px 0 4px; font-size: 14px; }
+  input, select { width: 100%; box-sizing: border-box; padding: 12px; font-size: 18px;
+                  border: 1px solid #8884; border-radius: 8px; }
+  button { width: 100%; margin-top: 20px; padding: 14px; font-size: 18px; border: 0; border-radius: 8px;
+           background: var(--tg-theme-button-color, #2481cc); color: var(--tg-theme-button-text-color, #fff); }
+  button:disabled { opacity: 0.5; }
+  #msg { margin-top: 14px; min-height: 24px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+  td, th { padding: 8px 4px; border-bottom: 1px solid #8884; text-align: left; font-size: 16px; }
+  td.num, th.num { text-align: right; }
+  h3 { margin: 18px 0 4px; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+  <nav>
+    <button id="tab-add" class="active">Ввод</button>
+    <button id="tab-sum">Итоги</button>
+    <button id="tab-arc">Архив</button>
+  </nav>
+
+  <section id="view-add">
+    <label for="amount">Сумма</label>
+    <input id="amount" type="text" inputmode="decimal" placeholder="4,5">
+
+    <label for="category">Категория</label>
+    <select id="category">
+      <option>Еда</option>
+      <option>Транспорт</option>
+      <option>Подписки</option>
+      <option>Развлечения</option>
+      <option>Учеба</option>
+      <option>Прочее</option>
+    </select>
+
+    <label for="comment">Комментарий</label>
+    <input id="comment" type="text" maxlength="200">
+
+    <label for="date">Дата</label>
+    <input id="date" type="date">
+
+    <button id="send">Записать</button>
+  </section>
+
+  <section id="view-sum" class="hidden"></section>
+  <section id="view-arc" class="hidden"></section>
+
+  <div id="msg"></div>
+
+<script>
+  // Адрес скрипта Google Apps Script
+  const URL_API = 'https://script.google.com/macros/s/AKfycbxIpHlOjUK5ojgkyfbHeR1pV6XPFO-C1jUdpW9LDMRR7eybGQyegOvmplLMGRPumgR_KQ/exec';
+
+  const tg = window.Telegram.WebApp;
+  tg.ready();
+
+  const msg = document.getElementById('msg');
+  const pad = n => String(n).padStart(2, '0');
+  const d = new Date();
+  document.getElementById('date').value = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+
+  // Общая функция запроса к скрипту
+  async function call(payload) {
+    payload.initData = tg.initData;
+    const resp = await fetch(URL_API, {
+      method: 'POST',
+      // text/plain, чтобы браузер не делал предварительный запрос, который Apps Script не обрабатывает
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(payload)
+    });
+    return resp.json();
+  }
+
+  // Переключение вкладок
+  const views = { add: 'view-add', sum: 'view-sum', arc: 'view-arc' };
+  function show(name) {
+    msg.textContent = '';
+    for (const k in views) {
+      document.getElementById(views[k]).classList.toggle('hidden', k !== name);
+      document.getElementById('tab-' + k).classList.toggle('active', k === name);
+    }
+    if (name === 'sum') loadSummary();
+    if (name === 'arc') loadArchive();
+  }
+  for (const k in views) {
+    document.getElementById('tab-' + k).addEventListener('click', () => show(k));
+  }
+
+  // Ввод траты
+  const btn = document.getElementById('send');
+  btn.addEventListener('click', async () => {
+    const amount = document.getElementById('amount').value.trim();
+    if (!amount) { msg.textContent = 'Введи сумму.'; return; }
+    btn.disabled = true;
+    msg.textContent = 'Отправляю...';
+    try {
+      const data = await call({
+        action: 'add',
+        amount: amount,
+        category: document.getElementById('category').value,
+        comment: document.getElementById('comment').value,
+        date: document.getElementById('date').value
+      });
+      if (data.ok) {
+        msg.textContent = 'Записано.';
+        document.getElementById('amount').value = '';
+        document.getElementById('comment').value = '';
+      } else {
+        msg.textContent = 'Ошибка: ' + data.error;
+      }
+    } catch (e) {
+      msg.textContent = 'Не удалось отправить. Проверь интернет.';
+    }
+    btn.disabled = false;
+  });
+
+  // Таблица "категория - сумма" (textContent, чтобы не вставлять чужой HTML)
+  function table(headers, rows) {
+    const t = document.createElement('table');
+    const head = document.createElement('tr');
+    headers.forEach((h, i) => {
+      const th = document.createElement('th');
+      th.textContent = h;
+      if (i > 0) th.className = 'num';
+      head.appendChild(th);
+    });
+    t.appendChild(head);
+    rows.forEach(r => {
+      const tr = document.createElement('tr');
+      r.forEach((v, i) => {
+        const td = document.createElement('td');
+        td.textContent = v;
+        if (i > 0) td.className = 'num';
+        tr.appendChild(td);
+      });
+      t.appendChild(tr);
+    });
+    return t;
+  }
+
+  const fmt = n => (Math.round(n * 100) / 100).toString().replace('.', ',');
+
+  function block(title, obj) {
+    const box = document.createElement('div');
+    const h = document.createElement('h3');
+    h.textContent = title;
+    box.appendChild(h);
+    let total = 0;
+    const rows = Object.keys(obj).map(c => { total += obj[c]; return [c, fmt(obj[c])]; });
+    rows.push(['Итого', fmt(total)]);
+    box.appendChild(table(['Категория', 'Сумма'], rows));
+    return box;
+  }
+
+  async function loadSummary() {
+    const el = document.getElementById('view-sum');
+    el.textContent = '';
+    msg.textContent = 'Загружаю...';
+    try {
+      const data = await call({ action: 'summary' });
+      if (!data.ok) { msg.textContent = 'Ошибка: ' + data.error; return; }
+      msg.textContent = '';
+      el.appendChild(block('Эта неделя', data.week));
+      el.appendChild(block('Этот месяц', data.month));
+    } catch (e) {
+      msg.textContent = 'Не удалось загрузить.';
+    }
+  }
+
+  async function loadArchive() {
+    const el = document.getElementById('view-arc');
+    el.textContent = '';
+    msg.textContent = 'Загружаю...';
+    try {
+      const data = await call({ action: 'archive' });
+      if (!data.ok) { msg.textContent = 'Ошибка: ' + data.error; return; }
+      msg.textContent = '';
+      if (!data.periods.length) { msg.textContent = 'Архив пока пуст.'; return; }
+      data.periods.forEach(p => el.appendChild(block(p.type + ' с ' + p.start, p.sums)));
+    } catch (e) {
+      msg.textContent = 'Не удалось загрузить.';
+    }
+  }
+</script>
+</body>
+</html>
