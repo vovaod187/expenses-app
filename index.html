@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Траты</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  body { font-family: sans-serif; margin: 0; padding: 16px;
+         background: var(--tg-theme-bg-color, #fff); color: var(--tg-theme-text-color, #000); }
+  nav { display: flex; gap: 8px; margin-bottom: 8px; }
+  nav button { flex: 1; margin: 0; padding: 10px; font-size: 16px; background: #8883; color: inherit; }
+  nav button.active { background: var(--tg-theme-button-color, #2481cc); color: var(--tg-theme-button-text-color, #fff); }
+  label { display: block; margin: 14px 0 4px; font-size: 14px; }
+  input, select { width: 100%; box-sizing: border-box; padding: 12px; font-size: 18px;
+                  border: 1px solid #8884; border-radius: 8px; }
+  button { width: 100%; margin-top: 20px; padding: 14px; font-size: 18px; border: 0; border-radius: 8px;
+           background: var(--tg-theme-button-color, #2481cc); color: var(--tg-theme-button-text-color, #fff); }
+  button:disabled { opacity: 0.5; }
+  #msg { margin-top: 14px; min-height: 24px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+  td, th { padding: 8px 4px; border-bottom: 1px solid #8884; text-align: left; font-size: 16px; }
+  td.num, th.num { text-align: right; }
+  h3 { margin: 18px 0 4px; }
+  .hidden { display: none; }
+  .hint { font-size: 14px; opacity: 0.8; line-height: 1.4; margin: 8px 0; }
+  .hint ol { padding-left: 20px; margin: 6px 0; }
+  .code { font-size: 24px; font-weight: bold; letter-spacing: 2px; text-align: center;
+          padding: 12px; border: 1px dashed #8886; border-radius: 8px; margin-top: 12px; user-select: all; }
+  .user { display: flex; justify-content: space-between; align-items: center; gap: 8px;
+          padding: 10px 0; border-bottom: 1px solid #8884; }
+  .user button { width: auto; margin: 0; padding: 8px 12px; font-size: 14px; }
+  .user .off { opacity: 0.5; }
+</style>
+</head>
+<body>
+  <nav id="nav" class="hidden">
+    <button id="tab-add" class="active">Ввод</button>
+    <button id="tab-sum">Итоги</button>
+    <button id="tab-arc">Архив</button>
+    <button id="tab-adm" class="hidden">Админ</button>
+  </nav>
+
+  <section id="view-reg" class="hidden">
+    <h3>Регистрация</h3>
+    <div class="hint">
+      Введи инвайт-код от владельца. Таблица с твоими тратами создастся автоматически.
+      Чтобы приходили недельные и месячные отчёты, нажми <b>Start</b> в чате с ботом.
+    </div>
+    <label for="reg-code">Инвайт-код</label>
+    <input id="reg-code" type="text" autocapitalize="characters" autocomplete="off">
+    <label for="reg-email">Почта Google (необязательно)</label>
+    <input id="reg-email" type="email" autocomplete="off" placeholder="name@gmail.com">
+    <div class="hint">Если указать почту, ты сможешь открывать свою таблицу на просмотр (без редактирования).</div>
+    <button id="reg-send">Зарегистрироваться</button>
+  </section>
+
+  <section id="view-add" class="hidden">
+    <label for="amount">Сумма</label>
+    <input id="amount" type="text" inputmode="decimal" placeholder="4,5">
+
+    <label for="category">Категория</label>
+    <select id="category">
+      <option>Еда</option>
+      <option>Транспорт</option>
+      <option>Подписки</option>
+      <option>Развлечения</option>
+      <option>Учеба</option>
+      <option>Прочее</option>
+    </select>
+
+    <label for="comment">Комментарий</label>
+    <input id="comment" type="text" maxlength="200">
+
+    <label for="date">Дата</label>
+    <input id="date" type="date">
+
+    <button id="send">Записать</button>
+  </section>
+
+  <section id="view-sum" class="hidden"></section>
+  <section id="view-arc" class="hidden"></section>
+
+  <section id="view-adm" class="hidden">
+    <button id="adm-invite">Создать инвайт-код</button>
+    <div id="adm-code"></div>
+    <h3>Пользователи</h3>
+    <div id="adm-users"></div>
+  </section>
+
+  <div id="msg"></div>
+
+<script>
+  // Адрес скрипта Google Apps Script
+  const URL_API = 'https://script.google.com/macros/s/AKfycbxIpHlOjUK5ojgkyfbHeR1pV6XPFO-C1jUdpW9LDMRR7eybGQyegOvmplLMGRPumgR_KQ/exec';
+
+  const tg = window.Telegram.WebApp;
+  tg.ready();
+
+  const msg = document.getElementById('msg');
+  const pad = n => String(n).padStart(2, '0');
+  const d = new Date();
+  document.getElementById('date').value = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+
+  // Общая функция запроса к скрипту
+  async function call(payload) {
+    payload.initData = tg.initData;
+    const resp = await fetch(URL_API, {
+      method: 'POST',
+      // text/plain, чтобы браузер не делал предварительный запрос, который Apps Script не обрабатывает
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(payload)
+    });
+    const data = await resp.json();
+    // Пользователя убрали или отключили во время работы
+    if (data && (data.error === 'not_registered' || data.error === 'disabled')) showRegister(data.error === 'disabled');
+    return data;
+  }
+
+  // Понятные тексты ошибок
+  const ERRORS = {
+    denied: 'Нет доступа.',
+    bad_invite: 'Неверный или просроченный инвайт-код.',
+    too_many_attempts: 'Слишком много попыток. Попробуй через час.',
+    bad_email: 'Проверь почту: не похоже на адрес.',
+    create_failed: 'Не удалось создать таблицу. Попробуй ещё раз или напиши владельцу.',
+    no_access_to_sheet: 'Нет доступа к твоей таблице. Напиши владельцу.',
+    already_registered: 'Ты уже зарегистрирован.',
+    disabled: 'Твой доступ отключён владельцем.',
+    cannot_change_owner: 'Нельзя менять владельца.'
+  };
+  const errText = e => ERRORS[e] || ('Ошибка: ' + e);
+
+  // Переключение вкладок
+  const views = { add: 'view-add', sum: 'view-sum', arc: 'view-arc', adm: 'view-adm' };
+  function show(name) {
+    msg.textContent = '';
+    document.getElementById('view-reg').classList.add('hidden');
+    for (const k in views) {
+      document.getElementById(views[k]).classList.toggle('hidden', k !== name);
+      document.getElementById('tab-' + k).classList.toggle('active', k === name);
+    }
+    if (name === 'sum') loadSummary();
+    if (name === 'arc') loadArchive();
+    if (name === 'adm') loadUsers();
+  }
+  for (const k in views) {
+    document.getElementById('tab-' + k).addEventListener('click', () => show(k));
+  }
+
+  // Экран регистрации: прячем всё остальное
+  function showRegister(disabled) {
+    document.getElementById('nav').classList.add('hidden');
+    for (const k in views) document.getElementById(views[k]).classList.add('hidden');
+    document.getElementById('view-reg').classList.toggle('hidden', !!disabled);
+    msg.textContent = disabled ? errText('disabled') : '';
+  }
+
+  // Определяем, кто открыл приложение
+  async function init() {
+    msg.textContent = 'Загружаю...';
+    try {
+      const me = await call({ action: 'whoami' });
+      if (!me.ok) { msg.textContent = errText(me.error); return; }
+      if (me.disabled) { showRegister(true); return; }
+      if (!me.registered) { showRegister(false); return; }
+      msg.textContent = '';
+      document.getElementById('nav').classList.remove('hidden');
+      document.getElementById('tab-adm').classList.toggle('hidden', !me.isAdmin);
+      show('add');
+    } catch (e) {
+      msg.textContent = 'Не удалось загрузить. Проверь интернет.';
+    }
+  }
+
+  // Регистрация по инвайту
+  const regBtn = document.getElementById('reg-send');
+  regBtn.addEventListener('click', async () => {
+    const code = document.getElementById('reg-code').value.trim();
+    const email = document.getElementById('reg-email').value.trim();
+    if (!code) { msg.textContent = 'Введи инвайт-код.'; return; }
+    regBtn.disabled = true;
+    msg.textContent = 'Регистрирую и создаю таблицу...';
+    try {
+      const data = await call({ action: 'register', code: code, email: email });
+      if (data.ok) {
+        await init();
+        if (data.emailGiven) {
+          msg.textContent = data.shared
+            ? 'Готово. Доступ к таблице отправлен на твою почту.'
+            : 'Готово, но доступ к таблице выдать не вышло. Напиши владельцу.';
+        }
+      } else { msg.textContent = errText(data.error); }
+    } catch (e) {
+      msg.textContent = 'Не удалось отправить. Проверь интернет.';
+    }
+    regBtn.disabled = false;
+  });
+
+  // Админка: инвайты и список пользователей (сервер всё равно проверяет владельца)
+  document.getElementById('adm-invite').addEventListener('click', async () => {
+    msg.textContent = 'Создаю...';
+    try {
+      const data = await call({ action: 'createInvite' });
+      if (!data.ok) { msg.textContent = errText(data.error); return; }
+      msg.textContent = 'Код действует ' + data.days + ' дн. Нажми на него, чтобы выделить.';
+      document.getElementById('adm-code').innerHTML = '';
+      const box = document.createElement('div');
+      box.className = 'code';
+      box.textContent = data.code;
+      document.getElementById('adm-code').appendChild(box);
+    } catch (e) {
+      msg.textContent = 'Не удалось создать код.';
+    }
+  });
+
+  async function loadUsers() {
+    const el = document.getElementById('adm-users');
+    el.textContent = '';
+    try {
+      const data = await call({ action: 'listUsers' });
+      if (!data.ok) { msg.textContent = errText(data.error); return; }
+      data.users.forEach(u => {
+        const row = document.createElement('div');
+        row.className = 'user';
+        const name = document.createElement('span');
+        name.textContent = u.name + (u.owner ? ' (ты)' : '') + (u.status !== 'active' ? ' - отключён' : '');
+        if (u.status !== 'active') name.className = 'off';
+        row.appendChild(name);
+        if (!u.owner) {
+          const b = document.createElement('button');
+          b.textContent = u.status === 'active' ? 'Отключить' : 'Включить';
+          b.addEventListener('click', async () => {
+            b.disabled = true;
+            const r = await call({ action: 'setUserStatus', userId: u.id,
+              status: u.status === 'active' ? 'disabled' : 'active' });
+            if (!r.ok) msg.textContent = errText(r.error);
+            loadUsers();
+          });
+          row.appendChild(b);
+        }
+        el.appendChild(row);
+      });
+    } catch (e) {
+      msg.textContent = 'Не удалось загрузить список.';
+    }
+  }
+
+  // Ввод траты
+  const btn = document.getElementById('send');
+  btn.addEventListener('click', async () => {
+    const amount = document.getElementById('amount').value.trim();
+    if (!amount) { msg.textContent = 'Введи сумму.'; return; }
+    btn.disabled = true;
+    msg.textContent = 'Отправляю...';
+    try {
+      const data = await call({
+        action: 'add',
+        amount: amount,
+        category: document.getElementById('category').value,
+        comment: document.getElementById('comment').value,
+        date: document.getElementById('date').value
+      });
+      if (data.ok) {
+        msg.textContent = 'Записано.';
+        document.getElementById('amount').value = '';
+        document.getElementById('comment').value = '';
+      } else {
+        msg.textContent = errText(data.error);
+      }
+    } catch (e) {
+      msg.textContent = 'Не удалось отправить. Проверь интернет.';
+    }
+    btn.disabled = false;
+  });
+
+  // Таблица "категория - сумма" (textContent, чтобы не вставлять чужой HTML)
+  function table(headers, rows) {
+    const t = document.createElement('table');
+    const head = document.createElement('tr');
+    headers.forEach((h, i) => {
+      const th = document.createElement('th');
+      th.textContent = h;
+      if (i > 0) th.className = 'num';
+      head.appendChild(th);
+    });
+    t.appendChild(head);
+    rows.forEach(r => {
+      const tr = document.createElement('tr');
+      r.forEach((v, i) => {
+        const td = document.createElement('td');
+        td.textContent = v;
+        if (i > 0) td.className = 'num';
+        tr.appendChild(td);
+      });
+      t.appendChild(tr);
+    });
+    return t;
+  }
+
+  const fmt = n => (Math.round(n * 100) / 100).toString().replace('.', ',');
+
+  function block(title, obj) {
+    const box = document.createElement('div');
+    const h = document.createElement('h3');
+    h.textContent = title;
+    box.appendChild(h);
+    let total = 0;
+    const rows = Object.keys(obj).map(c => { total += obj[c]; return [c, fmt(obj[c])]; });
+    rows.push(['Итого', fmt(total)]);
+    box.appendChild(table(['Категория', 'Сумма'], rows));
+    return box;
+  }
+
+  async function loadSummary() {
+    const el = document.getElementById('view-sum');
+    el.textContent = '';
+    msg.textContent = 'Загружаю...';
+    try {
+      const data = await call({ action: 'summary' });
+      if (!data.ok) { msg.textContent = errText(data.error); return; }
+      msg.textContent = '';
+      el.appendChild(block('Эта неделя', data.week));
+      el.appendChild(block('Этот месяц', data.month));
+    } catch (e) {
+      msg.textContent = 'Не удалось загрузить.';
+    }
+  }
+
+  async function loadArchive() {
+    const el = document.getElementById('view-arc');
+    el.textContent = '';
+    msg.textContent = 'Загружаю...';
+    try {
+      const data = await call({ action: 'archive' });
+      if (!data.ok) { msg.textContent = errText(data.error); return; }
+      msg.textContent = '';
+      if (!data.periods.length) { msg.textContent = 'Архив пока пуст.'; return; }
+      data.periods.forEach(p => el.appendChild(block(p.type + ' с ' + p.start, p.sums)));
+    } catch (e) {
+      msg.textContent = 'Не удалось загрузить.';
+    }
+  }
+
+  init();
+</script>
+</body>
+</html>
