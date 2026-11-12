@@ -89,7 +89,12 @@
   .row .t { flex: 1; min-width: 0; }
   .row .t div { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .row .t small { font-size: 13px; color: var(--muted); }
-  .row .s { font-size: 16px; }
+  .row .s { font-size: 16px; text-align: right; }
+  .row .s small { display: block; font-family: "Inter", sans-serif; font-size: 12px; color: var(--muted); }
+  .curs { display: flex; justify-content: center; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+  .curs button { font-size: 13px; padding: 6px 12px; border-radius: 999px; background: var(--surface); color: var(--muted); }
+  .curs button.on { background: var(--accent); color: var(--on-accent); font-weight: 600; }
+  .conv { min-height: 20px; margin-top: 8px; font-size: 13px; color: var(--accent-soft); }
   .day { font-size: 13px; color: var(--muted); margin: 18px 0 2px; display: flex; justify-content: space-between; }
 
   /* ---------- Нижняя панель ---------- */
@@ -324,7 +329,9 @@
       <div class="top"><h1 class="title" id="sheet-title">Новая трата</h1><button class="link" id="add-close">Закрыть</button></div>
       <div class="amount">
         <input id="amount" type="text" inputmode="decimal" placeholder="0" autocomplete="off" aria-label="Сумма">
-        <small>BYN</small>
+        <small id="cur-byn">BYN</small>
+        <div class="curs hidden" id="curs" role="radiogroup" aria-label="Валюта"></div>
+        <div class="conv" id="conv"></div>
       </div>
       <div class="grid" id="cats" role="radiogroup" aria-label="Категория"></div>
       <details class="more" id="more">
@@ -385,7 +392,8 @@
     cannot_change_owner: 'Владельца отключить нельзя.',
     'bad data': 'Проверь сумму и категорию.',
     'server error': 'Ошибка на сервере. Попробуй ещё раз.',
-    stale: 'Запись успела измениться. Список обновлён, попробуй ещё раз.'
+    stale: 'Запись успела измениться. Список обновлён, попробуй ещё раз.',
+    rate_unavailable: 'Не удалось получить курс Нацбанка. Попробуй чуть позже или запиши в BYN.'
   };
   const errText = e => ERRORS[e] || ('Ошибка: ' + e);
 
@@ -426,6 +434,7 @@
   const canEdit = () => !!(state.me && state.me.version >= 2);
   const canPair = () => !!(state.me && state.me.version >= 3);
   const canRemind = () => !!(state.me && state.me.version >= 4);
+  const canCurrency = () => !!(state.me && state.me.version >= 5 && Array.isArray(state.me.currencies));
   const shared = () => !!(state.me && state.me.partner);
   const VIEWS = ['home', 'sum', 'hist', 'set'];
   function show(name) {
@@ -464,6 +473,7 @@
       $('money').classList.toggle('hidden', !canEdit());
       $('pair').classList.toggle('hidden', !canPair());
       $('remind-box').classList.toggle('hidden', !canRemind());
+      buildCurs();
       $('remind').setAttribute('aria-checked', me.reminder !== false);
       $('lim-cat').textContent = '';
       state.cats.forEach(c => { const o = el('option', '', icon(c) + ' ' + c); o.value = c; $('lim-cat').appendChild(o); });
@@ -543,7 +553,9 @@
     t.appendChild(el('div', '', it.comment || it.category));
     t.appendChild(el('small', '', (it.comment ? it.category + ' · ' : '') + dayName(it.date) + (shared() && it.who ? ' · ' + it.who : '')));
     r.appendChild(t);
-    r.appendChild(el('div', 's num', fmt(it.amount)));
+    const sv = el('div', 's num', fmt(it.amount));
+    if (it.currency && it.currency !== 'BYN') sv.appendChild(el('small', '', fmt(it.orig) + ' ' + it.currency));
+    r.appendChild(sv);
     return r;
   }
 
@@ -580,10 +592,52 @@
     validate();
   }
 
+  // ---------- Валюта ----------
+  let cur = 'BYN', lastCur = 'BYN', rates = null, ratesDay = '';
+  // Последняя валюта запоминается на 12 часов (удобно в поездке), потом снова BYN
+  try {
+    const sv = (localStorage.getItem('lastCur') || '').split('|');
+    if (sv[0] && Date.now() - Number(sv[1] || 0) < 12 * 3600 * 1000) lastCur = sv[0];
+  } catch (e) {}
+  function buildCurs() {
+    const box = $('curs'); box.textContent = '';
+    const on = canCurrency();
+    box.classList.toggle('hidden', !on); $('cur-byn').classList.toggle('hidden', on);
+    if (!on) { cur = 'BYN'; return; }
+    if (state.me.currencies.indexOf(lastCur) === -1) lastCur = 'BYN';
+    state.me.currencies.forEach(c => {
+      const b = el('button', '', c); b.type = 'button'; b.dataset.c = c; b.setAttribute('role', 'radio');
+      b.addEventListener('click', () => { selectCur(c); try { tg.HapticFeedback.selectionChanged(); } catch (e) {} });
+      box.appendChild(b);
+    });
+    selectCur(lastCur);
+  }
+  function selectCur(c) {
+    cur = c;
+    $('curs').querySelectorAll('button').forEach(b => { const on = b.dataset.c === c; b.classList.toggle('on', on); b.setAttribute('aria-checked', on); });
+    if (c !== 'BYN') loadRates();
+    updateConv();
+  }
+  async function loadRates() {
+    if (rates && ratesDay === todayIso()) return;
+    try {
+      const r = await call({ action: 'rates' });
+      if (r.ok) { rates = r.rates; ratesDay = todayIso(); updateConv(); }
+    } catch (e) {}
+  }
+  function updateConv() {
+    const box = $('conv');
+    if (cur === 'BYN') { box.textContent = ''; return; }
+    const a = parseAmount(), rate = rates && rates[cur];
+    if (!rate) { box.textContent = 'Пересчитаю в BYN по курсу Нацбанка'; return; }
+    if (!(a > 0)) { box.textContent = '1 ' + cur + ' = ' + (rate < 0.1 ? rate.toFixed(4).replace('.', ',') : fmt(rate)) + ' BYN'; return; }
+    box.textContent = '≈ ' + fmt(a * rate) + ' BYN' + ($('date').value && $('date').value !== todayIso() ? ', точный курс на дату траты подставится при записи' : ' по курсу Нацбанка');
+  }
+
   const parseAmount = () => Number($('amount').value.trim().replace(/\s/g, '').replace(',', '.'));
   function validate() { $('send').disabled = !(parseAmount() > 0 && selected); }
-  $('amount').addEventListener('input', validate);
-  $('date').addEventListener('change', () => { $('more-date').textContent = $('date').value ? cap(dayName($('date').value)) : 'Сегодня'; });
+  $('amount').addEventListener('input', () => { validate(); updateConv(); });
+  $('date').addEventListener('change', () => { $('more-date').textContent = $('date').value ? cap(dayName($('date').value)) : 'Сегодня'; updateConv(); });
 
   let lastSelected = selected;
   function openSheet(item) {
@@ -592,12 +646,13 @@
     $('sheet-title').textContent = e ? 'Изменить трату' : 'Новая трата';
     $('send').textContent = e ? 'Сохранить' : 'Записать';
     $('del').classList.toggle('hidden', !e); $('del').textContent = 'Удалить трату'; delArmed = false;
-    $('amount').value = e ? fmt(e.amount) : '';
+    $('amount').value = e ? fmt(e.currency && e.currency !== 'BYN' ? e.orig : e.amount) : '';
     $('comment').value = e ? e.comment : '';
     $('date').value = e ? e.date : todayIso();
     $('more-date').textContent = $('date').value === todayIso() ? 'Сегодня' : cap(dayName($('date').value));
     $('more').open = !!(e && (e.comment || e.date !== todayIso()));
     if (e) { lastSelected = selected; selectCat(e.category); } else selectCat(lastSelected);
+    if (canCurrency()) selectCur(e ? (e.currency || 'BYN') : lastCur);
     validate();
     $('sheet').classList.add('open'); $('sheet').setAttribute('aria-hidden', 'false');
     try { tg.BackButton.show(); } catch (e) {}
@@ -616,12 +671,16 @@
     const e = state.edit;
     btn.disabled = true; btn.textContent = e ? 'Сохраняю…' : 'Записываю…';
     const payload = { action: e ? 'update' : 'add', amount: $('amount').value.trim(), category: selected,
+      currency: canCurrency() ? cur : undefined,
       comment: $('comment').value, date: $('date').value };
     if (e) { payload.row = e.row; payload.orig = { date: e.date, amount: e.amount, category: e.category, comment: e.comment }; }
     try {
       const data = await call(payload);
       if (data.ok) {
-        if (!e) { lastSelected = selected; try { localStorage.setItem('lastCat', selected); } catch (x) {} }
+        if (!e) {
+          lastSelected = selected; try { localStorage.setItem('lastCat', selected); } catch (x) {}
+          lastCur = cur; try { localStorage.setItem('lastCur', cur + '|' + Date.now()); } catch (x) {}
+        }
         else selected = lastSelected;
         haptic('success'); closeSheet(); toast(e ? 'Сохранено' : 'Записано');
         const prev = state.summary ? Number(state.summary.streak) || 0 : 0;

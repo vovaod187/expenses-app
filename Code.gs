@@ -13,6 +13,9 @@ const ALLOWED = ['Продукты', 'Кафе и доставка', 'Транс
   'Подписки', 'Развлечения', 'Учеба', 'Прочее'];
 // Старое название -> новое. Старые траты со старым названием считаются в новой категории
 const ALIASES = { 'Еда': 'Продукты' };
+// Валюты для ввода. Всё пересчитывается в BYN по курсу Нацбанка на дату траты
+const CURRENCIES = ['BYN', 'USD', 'EUR', 'PLN', 'AMD'];
+
 function canon_(c) {
   c = String(c);
   return ALIASES.hasOwnProperty(c) ? ALIASES[c] : c;
@@ -205,7 +208,8 @@ function doPost(e) {
         categories: ALLOWED,
         // Версия сервера: приложение включает новые функции, только если сервер их знает
         // (старый сервер принял бы незнакомое действие за запись новой траты)
-        version: 4,
+        version: 5,
+        currencies: CURRENCIES,
         reminder: user ? user.reminder : true,
         partner: user && user.status === 'active' ? partnerNames_(user) : ''
       });
@@ -233,6 +237,7 @@ function doPost(e) {
     if (action === 'summary') return out_(summary_(ss));
     if (action === 'archive') return out_(archiveList_(ss));
     if (action === 'history') return out_(history_(ss));
+    if (action === 'rates') return out_(rates_());
     if (action === 'update') return out_(update_(ss, body, user));
     if (action === 'partnerInvite') return out_(createPartnerInvite_(user));
     if (action === 'setReminder') return out_(setReminder_(user, body));
@@ -450,11 +455,53 @@ function setUserStatus_(body) {
 // Работа с тратами (всё принимает таблицу пользователя ss)
 // ---------------------------------------------------------------------
 // Разбор и проверка траты из запроса. Возвращает null, если данные неверные
+// Курс Нацбанка РБ: сколько BYN стоит 1 единица валюты на дату.
+// Если на дату курса нет (выходные, ещё не опубликован), берём ближайший предыдущий.
+// Курсы кэшируются на 6 часов. Возвращает 0, если Нацбанк недоступен
+function nbrbRate_(cur, date) {
+  if (cur === 'BYN') return 1;
+  const tz = Session.getScriptTimeZone();
+  const now = new Date();
+  const d = new Date(Math.min(date.getTime(), now.getTime()));
+  d.setHours(12, 0, 0, 0);
+  const cache = CacheService.getScriptCache();
+  for (let i = 0; i < 7; i++) {
+    const key = Utilities.formatDate(d, tz, 'yyyy-MM-dd');
+    const ck = 'rate_' + cur + '_' + key;
+    const cached = cache.get(ck);
+    if (cached) return Number(cached);
+    try {
+      const resp = UrlFetchApp.fetch('https://www.nbrb.by/api/exrates/rates/' + cur + '?parammode=2&ondate=' + key,
+        { muteHttpExceptions: true });
+      if (resp.getResponseCode() === 200) {
+        const j = JSON.parse(resp.getContentText());
+        const rate = Number(j.Cur_OfficialRate) / (Number(j.Cur_Scale) || 1);
+        if (rate > 0) { cache.put(ck, String(rate), 21600); return rate; }
+      }
+    } catch (err) {
+      console.error('Нацбанк недоступен: ' + (err && err.message ? err.message : 'unknown'));
+      return 0;
+    }
+    d.setDate(d.getDate() - 1);
+  }
+  return 0;
+}
+
+// Курсы на сегодня для предпросмотра в приложении
+function rates_() {
+  const res = {};
+  CURRENCIES.forEach(function (c) { if (c !== 'BYN') res[c] = nbrbRate_(c, new Date()); });
+  return { ok: true, rates: res };
+}
+
+// Разбор и проверка траты из запроса. Возвращает null, если данные неверные,
+// или { error } если не удалось получить курс валюты
 function parseExpense_(body) {
-  const amount = Number(String(body.amount).replace(/\s/g, '').replace(',', '.'));
+  const orig = Number(String(body.amount).replace(/\s/g, '').replace(',', '.'));
   // Старое название (например, из закэшированного приложения) сохраняем под новым
   const category = canon_(body.category);
-  if (!(amount > 0) || amount > 1e8 || ALLOWED.indexOf(category) === -1) return null;
+  const cur = String(body.currency || 'BYN').toUpperCase();
+  if (!(orig > 0) || orig > 1e9 || ALLOWED.indexOf(category) === -1 || CURRENCIES.indexOf(cur) === -1) return null;
   let date = new Date();
   if (body.date) {
     const p = String(body.date).split('-');
@@ -462,19 +509,34 @@ function parseExpense_(body) {
     if (isNaN(date.getTime())) return null;
   }
   const comment = String(body.comment || '').slice(0, 200).replace(/^[=+\-@]/, "'$&");
-  return { date: date, amount: Math.round(amount * 100) / 100, category: category, comment: comment };
+  const rate = nbrbRate_(cur, date);
+  if (!rate) return { error: 'rate_unavailable' };
+  const amount = Math.round(orig * rate * 100) / 100;
+  if (!(amount > 0) || amount > 1e8) return null;
+  return {
+    date: date, amount: amount, category: category, comment: comment,
+    currency: cur === 'BYN' ? '' : cur,
+    orig: cur === 'BYN' ? '' : Math.round(orig * 100) / 100
+  };
+}
+
+// Заголовки колонок валюты для старых таблиц
+function ensureCurrencyHeader_(sh) {
+  if (sh.getRange(1, 6).getValue() === '') sh.getRange(1, 6, 1, 2).setValues([['Валюта', 'Сумма в валюте']]);
 }
 
 function add_(ss, body, user) {
   const e = parseExpense_(body);
   if (!e) return { ok: false, error: 'bad data' };
+  if (e.error) return { ok: false, error: e.error };
   ensureSheets_(ss);
   const sh = ss.getSheetByName('Траты');
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    sh.appendRow([e.date, e.amount, e.category, e.comment, user ? user.name : '']);
+    sh.appendRow([e.date, e.amount, e.category, e.comment, user ? user.name : '', e.currency, e.orig]);
     if (sh.getRange(1, 5).getValue() === '') sh.getRange(1, 5).setValue('Кто'); // старые таблицы
+    if (e.currency) ensureCurrencyHeader_(sh);
   } finally {
     lock.releaseLock();
   }
@@ -500,6 +562,7 @@ function findExpenseRow_(sh, body) {
 function update_(ss, body, user) {
   const e = parseExpense_(body);
   if (!e) return { ok: false, error: 'bad data' };
+  if (e.error) return { ok: false, error: e.error };
   const sh = ss.getSheetByName('Траты');
   if (!sh) return { ok: false, error: 'stale' };
   const lock = LockService.getScriptLock();
@@ -508,6 +571,8 @@ function update_(ss, body, user) {
     const row = findExpenseRow_(sh, body);
     if (!row) return { ok: false, error: 'stale' };
     sh.getRange(row, 1, 1, 4).setValues([[e.date, e.amount, e.category, e.comment]]);
+    sh.getRange(row, 6, 1, 2).setValues([[e.currency, e.orig]]);
+    if (e.currency) ensureCurrencyHeader_(sh);
   } finally {
     lock.releaseLock();
   }
@@ -799,7 +864,9 @@ function history_(ss) {
       amount: a,
       category: canon_(rows[i][2]),
       comment: String(rows[i][3] || ''),
-      who: String(rows[i][4] || '')
+      who: String(rows[i][4] || ''),
+      currency: String(rows[i][5] || '') || 'BYN',
+      orig: Number(rows[i][6]) > 0 ? Number(rows[i][6]) : a
     });
   }
   items.sort(function (x, y) {

@@ -57,12 +57,15 @@ Telegram Mini App для личного учёта трат. Изначальн�
 ### Напоминание и серия (этап 4)
 `sendReminders` по триггеру каждый день около 21:00 (создаётся один раз функцией `setupReminderTrigger`): пишет тем, у кого в таблице за сегодня нет трат (в общем бюджете хватает записи одного). Выключается каждым в Настройках, хранится в `_Users`, колонка F (`off`). Серия (`summary.streak`) — дней подряд с тратами; если сегодня пусто, считается по вчера. На главной значок «🔥 N дней подряд» от 2 дней, конфетти на 3, 7, 14, 30, 50, 100, 200, 365. `summary_` читает лист «Траты» один раз. Функции включаются при `whoami.version >= 4`.
 
+### Валюты (этап 5)
+Ввод в BYN, USD, EUR, PLN, AMD (`CURRENCIES`). Сумма пересчитывается в BYN по официальному курсу Нацбанка РБ на дату траты: `https://www.nbrb.by/api/exrates/rates/<КОД>?parammode=2&ondate=yyyy-MM-dd`, курс = `Cur_OfficialRate / Cur_Scale` (AMD за 1000, PLN за 10). Нет курса на дату (выходные) — берётся ближайший предыдущий, до 7 дней; будущая дата — курс на сегодня; курсы кэшируются на 6 часов. Нацбанк недоступен — ошибка `rate_unavailable`, трата не пишется (в BYN писать можно). В листе «Траты»: B — сумма в BYN (по ней все итоги, лимиты, отчёты), F «Валюта», G «Сумма в валюте» (для BYN пусто). В приложении: валюты кнопками под суммой, предпросмотр «≈ X BYN» (действие `rates`), в списках под суммой исходная сумма в валюте; последняя валюта запоминается на 12 часов. Включается при `whoami.version >= 5`.
+
 ## 4. Ключевые файлы и функции
 
 Файлы: `Code.gs` (бэкенд, ~520 строк), `index.html` (фронтенд, ~350 строк), `DEPLOY.md` (инструкция запуска), `PROJECT_SUMMARY.md` (этот файл).
 
 ### `Code.gs`
-- **Вход:** `doPost(e)`. Действия: `whoami`, `register` (доступны без регистрации); `add`, `summary`, `archive`, `history`, `update`, `delete`, `setLimit`, `setBudget`, `partnerInvite`, `joinPartner`, `leavePartner`, `setReminder` (обычные); `createInvite`, `listUsers`, `setUserStatus` (только `OWNER_ID`).
+- **Вход:** `doPost(e)`. Действия: `whoami`, `register` (доступны без регистрации); `add`, `summary`, `archive`, `history`, `update`, `delete`, `setLimit`, `setBudget`, `partnerInvite`, `joinPartner`, `leavePartner`, `setReminder`, `rates` (обычные); `createInvite`, `listUsers`, `setUserStatus` (только `OWNER_ID`).
 - **Коды ошибок:** `denied`, `not_registered`, `disabled`, `bad_invite`, `too_many_attempts`, `bad_email`, `create_failed`, `no_access_to_sheet`, `already_registered`, `cannot_change_owner`, `no_such_user`, `bad data`, `server error`.
 - **Реестр:** `usersSheet_`, `invitesSheet_`, `allUsers_`, `getUser_`, `userSs_` (открывает таблицу пользователя), `displayName_`, `visible_` (определяет невидимые имена).
 - **Регистрация:** `register_` (проверка инвайта, лимит 5 неудачных попыток в час через `CacheService`, `LockService`), `createUserSheet_`, `usersFolder_`, `ensureSheets_`. Если указана почта, выдаётся доступ на просмотр (`addViewer`); при неудаче регистрация всё равно проходит.
