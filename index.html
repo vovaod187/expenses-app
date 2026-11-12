@@ -60,14 +60,8 @@
     <input id="amount" type="text" inputmode="decimal" placeholder="4,5">
 
     <label for="category">Категория</label>
-    <select id="category">
-      <option>Еда</option>
-      <option>Транспорт</option>
-      <option>Подписки</option>
-      <option>Развлечения</option>
-      <option>Учеба</option>
-      <option>Прочее</option>
-    </select>
+    <!-- Список категорий приходит с сервера (ALLOWED в Code.gs) -->
+    <select id="category"></select>
 
     <label for="comment">Комментарий</label>
     <input id="comment" type="text" maxlength="200">
@@ -167,10 +161,23 @@
       msg.textContent = '';
       document.getElementById('nav').classList.remove('hidden');
       document.getElementById('tab-adm').classList.toggle('hidden', !me.isAdmin);
+      fillCategories(me.categories);
       show('add');
     } catch (e) {
       msg.textContent = 'Не удалось загрузить. Проверь интернет.';
     }
+  }
+
+  // Выпадающий список категорий. Если сервер ещё старый и списка не прислал, берём прежний набор
+  const FALLBACK_CATEGORIES = ['Еда', 'Транспорт', 'Подписки', 'Развлечения', 'Учеба', 'Прочее'];
+  function fillCategories(list) {
+    const sel = document.getElementById('category');
+    sel.textContent = '';
+    (Array.isArray(list) && list.length ? list : FALLBACK_CATEGORIES).forEach(c => {
+      const o = document.createElement('option');
+      o.textContent = c;
+      sel.appendChild(o);
+    });
   }
 
   // Регистрация по инвайту
@@ -305,8 +312,17 @@
     const h = document.createElement('h3');
     h.textContent = title;
     box.appendChild(h);
+    // Показываем только категории, где есть траты
     let total = 0;
-    const rows = Object.keys(obj).map(c => { total += obj[c]; return [c, fmt(obj[c])]; });
+    const rows = Object.keys(obj).filter(c => obj[c] > 0)
+      .map(c => { total += obj[c]; return [c, fmt(obj[c])]; });
+    if (!rows.length) {
+      const p = document.createElement('div');
+      p.className = 'hint';
+      p.textContent = 'Трат нет.';
+      box.appendChild(p);
+      return box;
+    }
     rows.push(['Итого', fmt(total)]);
     box.appendChild(table(['Категория', 'Сумма'], rows));
     return box;
