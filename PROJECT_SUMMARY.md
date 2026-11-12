@@ -54,12 +54,15 @@ Telegram Mini App для личного учёта трат. Изначальн�
 ### Общий бюджет (этап 3)
 Два пользователя в `_Users` с одинаковым `spreadsheet_id` ведут одну таблицу. Код партнёра создаёт сам пользователь (Настройки → Общий бюджет): строка в `_Invites` с типом `partner`, ID таблицы и ID пригласившего (колонки F–H). Новый человек вводит код при регистрации (таблица не создаётся), уже зарегистрированный — в настройках (`joinPartner`, его старая таблица остаётся на Диске). Максимум двое. При подключении старые траты без «Кто» подписываются именем пригласившего. `leavePartner`: уходящий получает новую пустую таблицу, общие траты остаются у партнёра. Лимиты, бюджет, уведомления о 80% и отчёты общие (приходят обоим). В итогах блок «Кто сколько внёс» (`summary.byWho`), в истории имя внёсшего. Функции включаются при `whoami.version >= 3`.
 
+### Напоминание и серия (этап 4)
+`sendReminders` по триггеру каждый день около 21:00 (создаётся один раз функцией `setupReminderTrigger`): пишет тем, у кого в таблице за сегодня нет трат (в общем бюджете хватает записи одного). Выключается каждым в Настройках, хранится в `_Users`, колонка F (`off`). Серия (`summary.streak`) — дней подряд с тратами; если сегодня пусто, считается по вчера. На главной значок «🔥 N дней подряд» от 2 дней, конфетти на 3, 7, 14, 30, 50, 100, 200, 365. `summary_` читает лист «Траты» один раз. Функции включаются при `whoami.version >= 4`.
+
 ## 4. Ключевые файлы и функции
 
 Файлы: `Code.gs` (бэкенд, ~520 строк), `index.html` (фронтенд, ~350 строк), `DEPLOY.md` (инструкция запуска), `PROJECT_SUMMARY.md` (этот файл).
 
 ### `Code.gs`
-- **Вход:** `doPost(e)`. Действия: `whoami`, `register` (доступны без регистрации); `add`, `summary`, `archive`, `history`, `update`, `delete`, `setLimit`, `setBudget`, `partnerInvite`, `joinPartner`, `leavePartner` (обычные); `createInvite`, `listUsers`, `setUserStatus` (только `OWNER_ID`).
+- **Вход:** `doPost(e)`. Действия: `whoami`, `register` (доступны без регистрации); `add`, `summary`, `archive`, `history`, `update`, `delete`, `setLimit`, `setBudget`, `partnerInvite`, `joinPartner`, `leavePartner`, `setReminder` (обычные); `createInvite`, `listUsers`, `setUserStatus` (только `OWNER_ID`).
 - **Коды ошибок:** `denied`, `not_registered`, `disabled`, `bad_invite`, `too_many_attempts`, `bad_email`, `create_failed`, `no_access_to_sheet`, `already_registered`, `cannot_change_owner`, `no_such_user`, `bad data`, `server error`.
 - **Реестр:** `usersSheet_`, `invitesSheet_`, `allUsers_`, `getUser_`, `userSs_` (открывает таблицу пользователя), `displayName_`, `visible_` (определяет невидимые имена).
 - **Регистрация:** `register_` (проверка инвайта, лимит 5 неудачных попыток в час через `CacheService`, `LockService`), `createUserSheet_`, `usersFolder_`, `ensureSheets_`. Если указана почта, выдаётся доступ на просмотр (`addViewer`); при неудаче регистрация всё равно проходит.

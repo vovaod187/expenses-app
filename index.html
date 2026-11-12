@@ -69,6 +69,14 @@
   .card .btn2 { background: var(--raised); }
   .card .seg { background: var(--raised); margin-top: 12px; }
   .card .seg button.on { background: #3A3254; }
+  .switch-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+  .switch { flex: none; width: 50px; height: 30px; border-radius: 15px; background: var(--raised); position: relative; transition: background .2s; }
+  .switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: 50%; background: #CFC8E0; transition: transform .2s, background .2s; }
+  .switch[aria-checked="true"] { background: var(--accent); }
+  .switch[aria-checked="true"]::after { transform: translateX(20px); background: #fff; }
+  .confetti { position: fixed; inset: 0; pointer-events: none; z-index: 30; overflow: hidden; }
+  .confetti i { position: absolute; top: -20px; width: 8px; height: 14px; border-radius: 2px; animation: fall 1.8s cubic-bezier(.3,.6,.5,1) forwards; }
+  @keyframes fall { to { transform: translate(var(--dx), 105vh) rotate(var(--rot)); opacity: .9; } }
   .danger-link { display: block; margin: 22px auto 0; color: var(--danger); font-size: 15px; padding: 10px; }
   .big { font-size: 46px; line-height: 1.1; margin: 4px 0 0; }
   .hero-sub { position: relative; margin-top: 12px; color: var(--muted); }
@@ -193,7 +201,7 @@
 
   <!-- Главная -->
   <section id="v-home" class="view hidden">
-    <div class="top"><h1 class="title" id="h-month">Месяц</h1></div>
+    <div class="top"><h1 class="title" id="h-month">Месяц</h1><span class="chip hidden" id="h-streak"></span></div>
     <div class="hero">
       <div class="ring">
         <svg viewBox="0 0 236 236" aria-hidden="true">
@@ -240,6 +248,13 @@
     <div class="card">
       <p id="set-name"></p>
       <p class="muted">Отчёт за неделю приходит в Telegram по понедельникам, за месяц — 1-го числа. Если отчёты не приходят, нажми Start в чате с ботом.</p>
+    </div>
+    <div id="remind-box" class="hidden">
+      <h2>Напоминание</h2>
+      <div class="card switch-row">
+        <span>Напомнить в 21:00, если за день ничего не записано</span>
+        <button class="switch" id="remind" role="switch" aria-checked="true" aria-label="Напоминание в 21:00"></button>
+      </div>
     </div>
     <div id="money" class="hidden">
       <h2>Бюджет на месяц</h2>
@@ -410,6 +425,7 @@
   const state = { me: null, cats: [], history: null, period: 'month', summary: null, stale: { sum: true, hist: true }, edit: null };
   const canEdit = () => !!(state.me && state.me.version >= 2);
   const canPair = () => !!(state.me && state.me.version >= 3);
+  const canRemind = () => !!(state.me && state.me.version >= 4);
   const shared = () => !!(state.me && state.me.partner);
   const VIEWS = ['home', 'sum', 'hist', 'set'];
   function show(name) {
@@ -447,6 +463,8 @@
       $('admin').classList.toggle('hidden', !me.isAdmin);
       $('money').classList.toggle('hidden', !canEdit());
       $('pair').classList.toggle('hidden', !canPair());
+      $('remind-box').classList.toggle('hidden', !canRemind());
+      $('remind').setAttribute('aria-checked', me.reminder !== false);
       $('lim-cat').textContent = '';
       state.cats.forEach(c => { const o = el('option', '', icon(c) + ' ' + c); o.value = c; $('lim-cat').appendChild(o); });
       $('h-month').textContent = cap(new Date().toLocaleDateString('ru-RU', { month: 'long' }));
@@ -500,11 +518,16 @@
       sub.append('За неделю ', el('b', 'num', fmt(w)), ' · прошло ' + now.getDate() + ' из ' + days + ' дней');
       $('h-hint').classList.toggle('hidden', !canEdit());
     }
+    const n = Number(s.streak) || 0;
+    $('h-streak').classList.toggle('hidden', n < 2);
+    $('h-streak').textContent = '🔥 ' + n + ' ' + plural(n, ['день', 'дня', 'дней']) + ' подряд';
+    $('h-streak').title = s.todayHas ? '' : 'Запиши трату сегодня, чтобы серия продолжилась';
     $('h-total').classList.toggle('over', over);
     $('h-ring').classList.toggle('over', budget > 0 && t > budget);
     $('h-ring').setAttribute('stroke-dasharray', (len * frac).toFixed(1) + ' ' + len.toFixed(1));
   }
   $('h-hint').addEventListener('click', () => { show('set'); setTimeout(() => $('budget').focus(), 100); });
+  function plural(n, f) { const a = Math.abs(n) % 100, b = a % 10; return a > 10 && a < 20 ? f[2] : b > 1 && b < 5 ? f[1] : b === 1 ? f[0] : f[2]; }
   const fmtLimit = n => (n % 1 === 0 ? Number(n).toLocaleString('ru-RU') : fmt(n));
 
   function itemRow(it) {
@@ -601,7 +624,11 @@
         if (!e) { lastSelected = selected; try { localStorage.setItem('lastCat', selected); } catch (x) {} }
         else selected = lastSelected;
         haptic('success'); closeSheet(); toast(e ? 'Сохранено' : 'Записано');
-        afterChange();
+        const prev = state.summary ? Number(state.summary.streak) || 0 : 0;
+        afterChange().then(() => {
+          const n = state.summary ? Number(state.summary.streak) || 0 : 0;
+          if (!e && n > prev && MILESTONES.indexOf(n) !== -1) celebrate(n);
+        });
       } else { haptic('error'); toast(errText(data.error)); if (data.error === 'stale') { closeSheet(); afterChange(); } }
     } catch (x) { haptic('error'); toast('Не удалось отправить. Проверь интернет.'); }
     btn.textContent = state.edit ? 'Сохранить' : 'Записать'; validate();
@@ -624,11 +651,30 @@
   // После любого изменения обновляем главную, а открытую вкладку перерисовываем
   function afterChange() {
     state.stale.sum = true; state.stale.hist = true;
-    loadHome().then(() => {
+    return loadHome().then(() => {
       if (!$('v-hist').classList.contains('hidden')) renderHistory();
       if (!$('v-sum').classList.contains('hidden')) loadSummary();
       if (!$('v-set').classList.contains('hidden')) renderSettings();
     });
+  }
+
+  // Рубежи серии: конфетти и сообщение
+  const MILESTONES = [3, 7, 14, 30, 50, 100, 200, 365];
+  function celebrate(n) {
+    toast('🔥 ' + n + ' ' + plural(n, ['день', 'дня', 'дней']) + ' подряд! Так держать');
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const box = el('div', 'confetti');
+    for (let i = 0; i < 70; i++) {
+      const c = el('i');
+      c.style.left = Math.random() * 100 + '%';
+      c.style.background = COLORS[i % COLORS.length];
+      c.style.setProperty('--dx', (Math.random() * 160 - 80) + 'px');
+      c.style.setProperty('--rot', (Math.random() * 720 - 360) + 'deg');
+      c.style.animationDelay = (Math.random() * 0.4) + 's';
+      box.appendChild(c);
+    }
+    document.body.appendChild(box);
+    setTimeout(() => box.remove(), 2600);
   }
 
   // ---------- Итоги ----------
@@ -838,6 +884,18 @@
       else toast(errText(res.error));
     } catch (e) { toast('Не удалось сохранить. Проверь интернет.'); }
     btn.disabled = false;
+  });
+
+  // ---------- Напоминание ----------
+  $('remind').addEventListener('click', async () => {
+    const sw = $('remind'), on = sw.getAttribute('aria-checked') !== 'true';
+    sw.setAttribute('aria-checked', on); sw.disabled = true;
+    try {
+      const res = await call({ action: 'setReminder', on: on });
+      if (res.ok) { state.me.reminder = on; toast(on ? 'Напоминание включено' : 'Напоминание выключено'); }
+      else { sw.setAttribute('aria-checked', !on); toast(errText(res.error)); }
+    } catch (e) { sw.setAttribute('aria-checked', !on); toast('Не удалось сохранить. Проверь интернет.'); }
+    sw.disabled = false;
   });
 
   // ---------- Общий бюджет ----------

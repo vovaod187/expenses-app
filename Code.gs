@@ -104,7 +104,8 @@ function allUsers_() {
       name: String(rows[i][1]),
       sheetId: String(rows[i][2]),
       status: String(rows[i][3]),
-      since: rows[i][4]
+      since: rows[i][4],
+      reminder: String(rows[i][5] || '') !== 'off'
     });
   }
   return res;
@@ -204,7 +205,8 @@ function doPost(e) {
         categories: ALLOWED,
         // Версия сервера: приложение включает новые функции, только если сервер их знает
         // (старый сервер принял бы незнакомое действие за запись новой траты)
-        version: 3,
+        version: 4,
+        reminder: user ? user.reminder : true,
         partner: user && user.status === 'active' ? partnerNames_(user) : ''
       });
     }
@@ -233,6 +235,7 @@ function doPost(e) {
     if (action === 'history') return out_(history_(ss));
     if (action === 'update') return out_(update_(ss, body, user));
     if (action === 'partnerInvite') return out_(createPartnerInvite_(user));
+    if (action === 'setReminder') return out_(setReminder_(user, body));
     if (action === 'joinPartner') return out_(joinPartner_(tgUser, user, body));
     if (action === 'leavePartner') return out_(leavePartner_(user));
     if (action === 'delete') return out_(delete_(ss, body));
@@ -651,12 +654,16 @@ function checkLimits_(ss, category, user) {
 }
 
 // Сумма по категориям за период: от from (включительно) до to (не включая)
-function sumByCategory_(ss, from, to) {
+// Все строки листа «Траты» (с заголовком). Читаем один раз и передаём в расчёты
+function expenseRows_(ss) {
   const sh = ss.getSheetByName('Траты');
+  return sh ? sh.getDataRange().getValues() : [];
+}
+
+function sumByCategory_(ss, from, to, rowsCache) {
   const res = {};
   ALLOWED.forEach(function (c) { res[c] = 0; });
-  if (!sh) return res;
-  const rows = sh.getDataRange().getValues();
+  const rows = rowsCache || expenseRows_(ss);
   for (let i = 1; i < rows.length; i++) {
     const d = rows[i][0], a = Number(rows[i][1]), c = canon_(rows[i][2]);
     if (!(d instanceof Date) || !(a > 0) || !res.hasOwnProperty(c)) continue;
@@ -666,11 +673,9 @@ function sumByCategory_(ss, from, to) {
 }
 
 // Сколько внёс каждый участник за период (колонка «Кто»)
-function whoSums_(ss, from, to) {
-  const sh = ss.getSheetByName('Траты');
+function whoSums_(ss, from, to, rowsCache) {
   const res = {};
-  if (!sh) return res;
-  const rows = sh.getDataRange().getValues();
+  const rows = rowsCache || expenseRows_(ss);
   for (let i = 1; i < rows.length; i++) {
     const d = rows[i][0], a = Number(rows[i][1]);
     if (!(d instanceof Date) || !(a > 0) || d < from || d >= to) continue;
@@ -678,6 +683,65 @@ function whoSums_(ss, from, to) {
     res[who] = Math.round(((res[who] || 0) + a) * 100) / 100;
   }
   return res;
+}
+
+// Серия: сколько дней подряд есть хотя бы одна трата. Если сегодня ещё ничего нет,
+// серия не прерывается, а считается по вчерашний день
+function streakInfo_(rows) {
+  const tz = Session.getScriptTimeZone();
+  const key = function (d) { return Utilities.formatDate(d, tz, 'yyyy-MM-dd'); };
+  const days = {};
+  for (let i = 1; i < rows.length; i++) {
+    if (rows[i][0] instanceof Date && Number(rows[i][1]) > 0) days[key(rows[i][0])] = true;
+  }
+  const now = new Date();
+  const d = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const today = !!days[key(d)];
+  if (!today) d.setDate(d.getDate() - 1);
+  let streak = 0;
+  while (days[key(d)] && streak < 3660) { streak++; d.setDate(d.getDate() - 1); }
+  return { streak: streak, today: today };
+}
+
+function plural_(n, forms) {
+  const a = Math.abs(n) % 100, b = a % 10;
+  if (a > 10 && a < 20) return forms[2];
+  if (b > 1 && b < 5) return forms[1];
+  if (b === 1) return forms[0];
+  return forms[2];
+}
+
+// Включить или выключить вечернее напоминание (своё у каждого, даже в общем бюджете)
+function setReminder_(user, body) {
+  const sh = usersSheet_();
+  if (sh.getRange(1, 6).getValue() === '') sh.getRange(1, 6).setValue('напоминание');
+  sh.getRange(user.row, 6).setValue(body.on ? '' : 'off');
+  return { ok: true, reminder: !!body.on };
+}
+
+// По расписанию в 21:00: напоминаем тем, у кого в таблице за сегодня нет ни одной траты.
+// В общем бюджете достаточно, чтобы записал кто-то один
+function sendReminders() {
+  const cache = {};
+  forEachActiveUser_(function (u, ss) {
+    if (!u.reminder) return;
+    const info = cache[u.sheetId] || (cache[u.sheetId] = streakInfo_(expenseRows_(ss)));
+    if (info.today) return;
+    let text = 'Сегодня в приложении ещё нет трат. Если траты были, запиши их, пока помнится.';
+    if (info.streak >= 2) {
+      text += '\nСерия: ' + info.streak + ' ' + plural_(info.streak, ['день', 'дня', 'дней']) + ' подряд, не прерывай её.';
+    }
+    text += '\n\nВыключить напоминание можно в приложении: Настройки.';
+    sendMessage_(u.id, text);
+  });
+}
+
+// Запусти один раз вручную: напоминание каждый день около 21:00
+function setupReminderTrigger() {
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === 'sendReminders') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('sendReminders').timeBased().everyDays(1).atHour(21).nearMinute(0).create();
 }
 
 function weekStart_(now) {
@@ -692,15 +756,18 @@ function summary_(ss) {
   const ms = new Date(now.getFullYear(), now.getMonth(), 1);
   const ds = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const settings = getSettings_(ss);
+  const rows = expenseRows_(ss);
+  const we = new Date(ws.getFullYear(), ws.getMonth(), ws.getDate() + 7);
+  const me = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  const st = streakInfo_(rows);
   return {
     ok: true,
-    week: sumByCategory_(ss, ws, new Date(ws.getFullYear(), ws.getMonth(), ws.getDate() + 7)),
-    month: sumByCategory_(ss, ms, new Date(now.getFullYear(), now.getMonth() + 1, 1)),
-    today: total_(sumByCategory_(ss, ds, new Date(ds.getFullYear(), ds.getMonth(), ds.getDate() + 1))),
-    byWho: {
-      week: whoSums_(ss, ws, new Date(ws.getFullYear(), ws.getMonth(), ws.getDate() + 7)),
-      month: whoSums_(ss, ms, new Date(now.getFullYear(), now.getMonth() + 1, 1))
-    },
+    week: sumByCategory_(ss, ws, we, rows),
+    month: sumByCategory_(ss, ms, me, rows),
+    today: total_(sumByCategory_(ss, ds, new Date(ds.getFullYear(), ds.getMonth(), ds.getDate() + 1), rows)),
+    byWho: { week: whoSums_(ss, ws, we, rows), month: whoSums_(ss, ms, me, rows) },
+    streak: st.streak,
+    todayHas: st.today,
     budget: Number(settings['budget:month']) > 0 ? Number(settings['budget:month']) : 0,
     limits: limitsFrom_(settings)
   };
