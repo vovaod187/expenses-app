@@ -88,7 +88,7 @@ function invitesSheet_() {
     sh = ss.insertSheet('_Invites');
     sh.getRange('A:A').setNumberFormat('@');
     sh.getRange('D:D').setNumberFormat('@');
-    sh.appendRow(['код', 'создан', 'истекает', 'использован кем', 'когда']);
+    sh.appendRow(['код', 'создан', 'истекает', 'использован кем', 'когда', 'тип', 'таблица', 'пригласил']);
   }
   return sh;
 }
@@ -204,7 +204,8 @@ function doPost(e) {
         categories: ALLOWED,
         // Версия сервера: приложение включает новые функции, только если сервер их знает
         // (старый сервер принял бы незнакомое действие за запись новой траты)
-        version: 2
+        version: 3,
+        partner: user && user.status === 'active' ? partnerNames_(user) : ''
       });
     }
     if (action === 'register') return out_(register_(tgUser, body));
@@ -231,6 +232,9 @@ function doPost(e) {
     if (action === 'archive') return out_(archiveList_(ss));
     if (action === 'history') return out_(history_(ss));
     if (action === 'update') return out_(update_(ss, body, user));
+    if (action === 'partnerInvite') return out_(createPartnerInvite_(user));
+    if (action === 'joinPartner') return out_(joinPartner_(tgUser, user, body));
+    if (action === 'leavePartner') return out_(leavePartner_(user));
     if (action === 'delete') return out_(delete_(ss, body));
     if (action === 'setLimit') return out_(setLimit_(ss, body));
     if (action === 'setBudget') return out_(setBudget_(ss, body));
@@ -244,31 +248,58 @@ function doPost(e) {
 // ---------------------------------------------------------------------
 // Регистрация по инвайт-коду
 // ---------------------------------------------------------------------
-function register_(tgUser, body) {
+// Ищет действующий код в _Invites. Неверный код увеличивает счётчик попыток (не больше 5 в час).
+// Колонки: код | создан | истекает | использован кем | когда | тип | таблица | пригласил
+function findInvite_(tgUser, codeRaw) {
   const cache = CacheService.getScriptCache();
   const failKey = 'fails_' + tgUser.id;
   const fails = Number(cache.get(failKey) || 0);
-  if (fails >= MAX_FAILS_PER_HOUR) return { ok: false, error: 'too_many_attempts' };
+  if (fails >= MAX_FAILS_PER_HOUR) return { error: 'too_many_attempts' };
+  const code = String(codeRaw || '').trim().toUpperCase();
+  const invites = invitesSheet_();
+  const rows = invites.getDataRange().getValues();
+  for (let i = 1; i < rows.length && code !== ''; i++) {
+    const r = rows[i];
+    if (String(r[0]).toUpperCase() !== code) continue;
+    if (r[3] !== '' || new Date(r[2]).getTime() < Date.now()) break;
+    return {
+      row: i + 1, sheet: invites, failKey: failKey,
+      type: String(r[5] || ''), sheetId: String(r[6] || ''), inviterId: String(r[7] || '')
+    };
+  }
+  cache.put(failKey, String(fails + 1), 3600);
+  return { error: 'bad_invite' };
+}
 
+function useInvite_(inv, telegramId) {
+  inv.sheet.getRange(inv.row, 4, 1, 2).setValues([[String(telegramId), new Date()]]);
+  CacheService.getScriptCache().remove(inv.failKey);
+}
+
+function activeMembersOf_(sheetId) {
+  return allUsers_().filter(function (u) { return u.status === 'active' && u.sheetId === sheetId; });
+}
+
+// Старые траты без отметки «Кто» записывал тот, кто вёл таблицу один, подписываем его именем
+function backfillWho_(ss, name) {
+  const sh = ss.getSheetByName('Траты');
+  if (!sh || sh.getLastRow() < 2) return;
+  if (sh.getRange(1, 5).getValue() === '') sh.getRange(1, 5).setValue('Кто');
+  const n = sh.getLastRow() - 1;
+  const range = sh.getRange(2, 5, n, 1);
+  const vals = range.getValues();
+  let changed = false;
+  vals.forEach(function (v) { if (v[0] === '') { v[0] = name; changed = true; } });
+  if (changed) range.setValues(vals);
+}
+
+function register_(tgUser, body) {
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
     if (getUser_(tgUser.id)) return { ok: false, error: 'already_registered' };
-
-    const code = String(body.code || '').trim().toUpperCase();
-    const invites = invitesSheet_();
-    const rows = invites.getDataRange().getValues();
-    let inviteRow = -1;
-    for (let i = 1; i < rows.length; i++) {
-      if (String(rows[i][0]).toUpperCase() === code && code !== '') { inviteRow = i + 1; break; }
-    }
-    const bad = inviteRow === -1 ||
-      rows[inviteRow - 1][3] !== '' ||
-      new Date(rows[inviteRow - 1][2]).getTime() < Date.now();
-    if (bad) {
-      cache.put(failKey, String(fails + 1), 3600);
-      return { ok: false, error: 'bad_invite' };
-    }
+    const inv = findInvite_(tgUser, body.code);
+    if (inv.error) return { ok: false, error: inv.error };
 
     // Необязательная почта для доступа на просмотр. Проверяем до создания таблицы,
     // чтобы опечатка не сжигала инвайт
@@ -276,19 +307,27 @@ function register_(tgUser, body) {
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { ok: false, error: 'bad_email' };
 
     const name = displayName_(tgUser);
-
-    // Таблицу создаёт скрипт: она лежит на Диске владельца в отдельной папке
-    let ss;
-    try {
-      ss = createUserSheet_(name);
-    } catch (err) {
-      console.error('Не удалось создать таблицу: ' + (err && err.message ? err.message : 'unknown'));
-      return { ok: false, error: 'create_failed' };
+    let ss, partnerName = '';
+    if (inv.type === 'partner') {
+      // Код партнёра: подключаемся к таблице пригласившего, новую таблицу не создаём
+      const members = activeMembersOf_(inv.sheetId);
+      if (members.length >= 2) return { ok: false, error: 'partner_limit' };
+      try { ss = SpreadsheetApp.openById(inv.sheetId); } catch (err) { return { ok: false, error: 'no_access_to_sheet' }; }
+      const inviter = getUser_(inv.inviterId);
+      partnerName = inviter ? inviter.name : '';
+      if (partnerName) backfillWho_(ss, partnerName);
+    } else {
+      // Таблицу создаёт скрипт: она лежит на Диске владельца в отдельной папке
+      try {
+        ss = createUserSheet_(name);
+      } catch (err) {
+        console.error('Не удалось создать таблицу: ' + (err && err.message ? err.message : 'unknown'));
+        return { ok: false, error: 'create_failed' };
+      }
     }
 
     usersSheet_().appendRow([String(tgUser.id), name, ss.getId(), 'active', new Date()]);
-    invites.getRange(inviteRow, 4, 1, 2).setValues([[String(tgUser.id), new Date()]]);
-    cache.remove(failKey);
+    useInvite_(inv, tgUser.id);
 
     // Доступ только на просмотр. Если не получилось, регистрация всё равно успешна
     let shared = false;
@@ -300,20 +339,82 @@ function register_(tgUser, body) {
         console.error('Не удалось выдать доступ на просмотр');
       }
     }
-    return { ok: true, emailGiven: !!email, shared: shared };
+    return { ok: true, emailGiven: !!email, shared: shared, partner: partnerName };
   } finally {
     lock.releaseLock();
   }
 }
 
+// Уже зарегистрированный пользователь вводит код партнёра и переходит в его таблицу.
+// Его прежняя таблица остаётся на Диске, но в приложении больше не показывается
+function joinPartner_(tgUser, user, body) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const inv = findInvite_(tgUser, body.code);
+    if (inv.error) return { ok: false, error: inv.error };
+    if (inv.type !== 'partner' || inv.sheetId === user.sheetId) return { ok: false, error: 'bad_invite' };
+    if (activeMembersOf_(user.sheetId).length > 1) return { ok: false, error: 'already_shared' };
+    if (activeMembersOf_(inv.sheetId).length >= 2) return { ok: false, error: 'partner_limit' };
+    let ss;
+    try { ss = SpreadsheetApp.openById(inv.sheetId); } catch (err) { return { ok: false, error: 'no_access_to_sheet' }; }
+    const inviter = getUser_(inv.inviterId);
+    if (inviter) backfillWho_(ss, inviter.name);
+    usersSheet_().getRange(user.row, 3).setValue(inv.sheetId);
+    useInvite_(inv, tgUser.id);
+    return { ok: true, partner: inviter ? inviter.name : '' };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// Код, по которому партнёр подключится к таблице пользователя (общий бюджет максимум на двоих)
+function createPartnerInvite_(user) {
+  if (activeMembersOf_(user.sheetId).length >= 2) return { ok: false, error: 'partner_limit' };
+  const code = newCode_();
+  const now = new Date();
+  const exp = new Date(now.getTime() + INVITE_DAYS * 24 * 3600 * 1000);
+  const sh = invitesSheet_();
+  if (sh.getRange(1, 6).getValue() === '') sh.getRange(1, 6, 1, 3).setValues([['тип', 'таблица', 'пригласил']]);
+  sh.appendRow([code, now, exp, '', '', 'partner', user.sheetId, user.id]);
+  return { ok: true, code: code, days: INVITE_DAYS };
+}
+
+// Выход из общего бюджета: уходящий получает новую пустую таблицу, общие траты остаются у партнёра
+function leavePartner_(user) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    if (activeMembersOf_(user.sheetId).length < 2) return { ok: false, error: 'not_shared' };
+    let ss;
+    try { ss = createUserSheet_(user.name); } catch (err) { return { ok: false, error: 'create_failed' }; }
+    usersSheet_().getRange(user.row, 3).setValue(ss.getId());
+    return { ok: true };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// Имена остальных участников общей таблицы
+function partnerNames_(user) {
+  return activeMembersOf_(user.sheetId)
+    .filter(function (u) { return u.id !== user.id; })
+    .map(function (u) { return visible_(u.name) ? u.name : 'ID ' + u.id; }).join(', ');
+}
+
 // ---------------------------------------------------------------------
 // Админ-функции
 // ---------------------------------------------------------------------
-function createInvite_() {
-  // Без похожих символов (0/O, 1/I)
+// Случайный код без похожих символов (0/O, 1/I)
+function newCode_() {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let code = '';
   for (let i = 0; i < 10; i++) code += alphabet.charAt(Math.floor(Math.random() * alphabet.length));
+  return code;
+}
+
+function createInvite_() {
+  const code = newCode_();
   const now = new Date();
   const exp = new Date(now.getTime() + INVITE_DAYS * 24 * 3600 * 1000);
   invitesSheet_().appendRow([code, now, exp, '', '']);
@@ -321,11 +422,13 @@ function createInvite_() {
 }
 
 function listUsers_() {
+  const users = allUsers_();
   return {
     ok: true,
-    users: allUsers_().map(function (u) {
+    users: users.map(function (u) {
       // Если имя в листе _Users пустое, показываем хотя бы Telegram ID
-      return { id: u.id, name: visible_(u.name) ? u.name : ('ID ' + u.id), status: u.status, owner: isOwner_(u.id) };
+      const shared = u.status === 'active' ? partnerNames_(u) : '';
+      return { id: u.id, name: visible_(u.name) ? u.name : ('ID ' + u.id), status: u.status, owner: isOwner_(u.id), shared: shared };
     })
   };
 }
@@ -562,6 +665,21 @@ function sumByCategory_(ss, from, to) {
   return res;
 }
 
+// Сколько внёс каждый участник за период (колонка «Кто»)
+function whoSums_(ss, from, to) {
+  const sh = ss.getSheetByName('Траты');
+  const res = {};
+  if (!sh) return res;
+  const rows = sh.getDataRange().getValues();
+  for (let i = 1; i < rows.length; i++) {
+    const d = rows[i][0], a = Number(rows[i][1]);
+    if (!(d instanceof Date) || !(a > 0) || d < from || d >= to) continue;
+    const who = String(rows[i][4] || '') || 'Без отметки';
+    res[who] = Math.round(((res[who] || 0) + a) * 100) / 100;
+  }
+  return res;
+}
+
 function weekStart_(now) {
   const d = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   d.setDate(d.getDate() - (d.getDay() + 6) % 7); // понедельник
@@ -579,6 +697,10 @@ function summary_(ss) {
     week: sumByCategory_(ss, ws, new Date(ws.getFullYear(), ws.getMonth(), ws.getDate() + 7)),
     month: sumByCategory_(ss, ms, new Date(now.getFullYear(), now.getMonth() + 1, 1)),
     today: total_(sumByCategory_(ss, ds, new Date(ds.getFullYear(), ds.getMonth(), ds.getDate() + 1))),
+    byWho: {
+      week: whoSums_(ss, ws, new Date(ws.getFullYear(), ws.getMonth(), ws.getDate() + 7)),
+      month: whoSums_(ss, ms, new Date(now.getFullYear(), now.getMonth() + 1, 1))
+    },
     budget: Number(settings['budget:month']) > 0 ? Number(settings['budget:month']) : 0,
     limits: limitsFrom_(settings)
   };

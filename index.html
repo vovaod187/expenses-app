@@ -179,9 +179,9 @@
   <!-- Регистрация -->
   <section id="v-reg" class="view reg hidden">
     <h1>Траты</h1>
-    <p class="muted" id="reg-text">Введи инвайт-код, который тебе прислали. Таблица с тратами создастся сама.</p>
+    <p class="muted" id="reg-text">Введи инвайт-код или код партнёра, который тебе прислали.</p>
     <div id="reg-form">
-      <label class="field" for="reg-code">Инвайт-код</label>
+      <label class="field" for="reg-code">Код</label>
       <input class="input" id="reg-code" type="text" autocapitalize="characters" autocomplete="off">
       <label class="field" for="reg-email">Почта Google, по желанию</label>
       <input class="input" id="reg-email" type="email" autocomplete="off" placeholder="name@gmail.com">
@@ -220,6 +220,10 @@
     </div>
     <div class="donut" id="s-donut"><div class="c"><small id="s-label"></small><div class="big num" id="s-total">0,00</div><small>BYN</small></div></div>
     <div id="s-list"></div>
+    <div id="s-who-box" class="hidden">
+      <h2>Кто сколько внёс</h2>
+      <div id="s-who"></div>
+    </div>
     <h2>Прошлые периоды</h2>
     <div id="s-arc"></div>
   </section>
@@ -262,6 +266,31 @@
           </div>
         </div>
         <p class="muted small" style="margin-top:10px">Когда потрачено 80% лимита, бот один раз напишет в Telegram.</p>
+      </div>
+    </div>
+    <div id="pair" class="hidden">
+      <h2>Общий бюджет</h2>
+      <div class="card">
+        <div id="pair-on" class="hidden">
+          <p>Партнёр: <b id="pair-name"></b></p>
+          <p class="muted small">Траты, бюджет, лимиты и отчёты у вас общие. Исправлять можно любые траты.</p>
+          <button class="danger-link" id="pair-leave" style="margin:10px 0 0;padding:6px 0">Выйти из общего бюджета</button>
+          <p class="muted small">Ты получишь новую пустую таблицу, общие траты останутся у партнёра.</p>
+        </div>
+        <div id="pair-off" class="hidden">
+          <p class="muted">Вести траты вдвоём: партнёр записывает траты в твою таблицу, итоги и лимиты общие.</p>
+          <button class="btn2" id="pair-invite">Пригласить партнёра</button>
+          <div id="pair-code"></div>
+          <button class="link" id="pair-join-open" style="margin-top:6px">У меня есть код партнёра</button>
+          <div id="pair-join" class="hidden">
+            <label class="field" for="pair-join-code">Код партнёра</label>
+            <div class="inrow">
+              <input class="input" id="pair-join-code" type="text" autocapitalize="characters" autocomplete="off">
+              <button class="btn-s" id="pair-join-btn">Подключиться</button>
+            </div>
+            <p class="muted small" style="margin-top:8px">Ты перейдёшь в таблицу партнёра. Твои прошлые траты останутся в старой таблице, но в приложении видны не будут.</p>
+          </div>
+        </div>
       </div>
     </div>
     <div id="admin" class="hidden">
@@ -334,6 +363,9 @@
     create_failed: 'Не получилось создать таблицу. Попробуй ещё раз.',
     no_access_to_sheet: 'Нет доступа к твоей таблице. Напиши владельцу.',
     already_registered: 'Ты уже зарегистрирован.',
+    partner_limit: 'В этом общем бюджете уже двое.',
+    already_shared: 'Ты уже в общем бюджете. Сначала выйди из него.',
+    not_shared: 'Ты не в общем бюджете.',
     disabled: 'Доступ отключён владельцем.',
     cannot_change_owner: 'Владельца отключить нельзя.',
     'bad data': 'Проверь сумму и категорию.',
@@ -377,6 +409,8 @@
   // ---------- Навигация ----------
   const state = { me: null, cats: [], history: null, period: 'month', summary: null, stale: { sum: true, hist: true }, edit: null };
   const canEdit = () => !!(state.me && state.me.version >= 2);
+  const canPair = () => !!(state.me && state.me.version >= 3);
+  const shared = () => !!(state.me && state.me.partner);
   const VIEWS = ['home', 'sum', 'hist', 'set'];
   function show(name) {
     VIEWS.forEach(v => $('v-' + v).classList.toggle('hidden', v !== name));
@@ -384,7 +418,7 @@
     window.scrollTo(0, 0);
     if (name === 'sum') { if (state.stale.sum || !state.arcLoaded) loadSummary(); else renderSummary(); }
     if (name === 'hist') { if (state.stale.hist) loadHistory(); else renderHistory(); }
-    if (name === 'set') { renderSettings(); if (state.me && state.me.isAdmin) loadUsers(); }
+    if (name === 'set') { renderSettings(); renderPair(); if (state.me && state.me.isAdmin) loadUsers(); }
   }
   document.querySelectorAll('#nav [data-v]').forEach(b => b.addEventListener('click', () => show(b.dataset.v)));
 
@@ -396,7 +430,7 @@
     $('v-reg').classList.remove('hidden');
     $('reg-form').classList.toggle('hidden', !!disabled);
     $('reg-text').textContent = disabled ? errText('disabled')
-      : 'Введи инвайт-код, который тебе прислали. Таблица с тратами создастся сама.';
+      : 'Введи инвайт-код или код партнёра, который тебе прислали.';
   }
 
   // ---------- Старт ----------
@@ -412,6 +446,7 @@
       $('set-name').textContent = me.name ? 'Аккаунт: ' + me.name : '';
       $('admin').classList.toggle('hidden', !me.isAdmin);
       $('money').classList.toggle('hidden', !canEdit());
+      $('pair').classList.toggle('hidden', !canPair());
       $('lim-cat').textContent = '';
       state.cats.forEach(c => { const o = el('option', '', icon(c) + ' ' + c); o.value = c; $('lim-cat').appendChild(o); });
       $('h-month').textContent = cap(new Date().toLocaleDateString('ru-RU', { month: 'long' }));
@@ -483,7 +518,7 @@
     r.appendChild(el('div', 'ico', icon(it.category)));
     const t = el('div', 't');
     t.appendChild(el('div', '', it.comment || it.category));
-    t.appendChild(el('small', '', (it.comment ? it.category + ' · ' : '') + dayName(it.date)));
+    t.appendChild(el('small', '', (it.comment ? it.category + ' · ' : '') + dayName(it.date) + (shared() && it.who ? ' · ' + it.who : '')));
     r.appendChild(t);
     r.appendChild(el('div', 's num', fmt(it.amount)));
     return r;
@@ -627,6 +662,7 @@
     let acc = 0;
     const stops = keys.map(c => { const a = acc; acc += obj[c] / t * 100; return colorOf(c) + ' ' + a.toFixed(2) + '% ' + acc.toFixed(2) + '%'; });
     $('s-donut').style.background = keys.length ? 'conic-gradient(' + stops.join(',') + ')' : '';
+    renderWho();
     const list = $('s-list'); list.textContent = '';
     // Категории с лимитом показываем всегда, даже если трат по ним ещё нет
     const lim = (state.summary.limits || {})[state.period] || {};
@@ -650,6 +686,20 @@
         else if (pct >= 80) box.appendChild(el('div', 'note', 'Использовано ' + pct + '% лимита ' + pname));
       }
       list.appendChild(box);
+    });
+  }
+
+  // Кто сколько внёс (только в общем бюджете)
+  function renderWho() {
+    const by = ((state.summary || {}).byWho || {})[state.period] || {};
+    const names = Object.keys(by).sort((a, b) => by[b] - by[a]);
+    $('s-who-box').classList.toggle('hidden', !(shared() && names.length));
+    const box = $('s-who'); box.textContent = '';
+    const t = names.reduce((s, n) => s + by[n], 0);
+    names.forEach(n => {
+      const r = el('div', 'cl');
+      r.append(el('span', '', n), el('span', 'num', fmt(by[n]) + (t ? '  ·  ' + Math.round(by[n] / t * 100) + '%' : '')));
+      box.appendChild(r);
     });
   }
 
@@ -790,6 +840,68 @@
     btn.disabled = false;
   });
 
+  // ---------- Общий бюджет ----------
+  const BOT_URL = 'https://t.me/expensesforvovibot';
+  function renderPair() {
+    if (!canPair()) return;
+    $('pair-on').classList.toggle('hidden', !shared());
+    $('pair-off').classList.toggle('hidden', shared());
+    $('pair-name').textContent = state.me.partner || '';
+  }
+
+  $('pair-invite').addEventListener('click', async () => {
+    const btn = $('pair-invite'); btn.disabled = true;
+    try {
+      const data = await call({ action: 'partnerInvite' });
+      if (!data.ok) { toast(errText(data.error)); btn.disabled = false; return; }
+      const text = 'Давай вести траты вместе. Открой бота ' + BOT_URL + ', нажми Start, потом открой приложение и введи код: ' + data.code;
+      const box = $('pair-code'); box.textContent = '';
+      box.appendChild(el('div', 'code', data.code));
+      box.appendChild(el('p', 'muted small', 'Код одноразовый, действует ' + data.days + ' дней. Партнёр вводит его при регистрации или в настройках, если уже пользуется приложением.'));
+      const send = el('button', 'cta', 'Отправить приглашение'); send.style.marginTop = '10px';
+      send.addEventListener('click', () => {
+        const url = 'https://t.me/share/url?url=' + encodeURIComponent(BOT_URL) + '&text=' + encodeURIComponent(text);
+        try { tg.openTelegramLink(url); } catch (e) { window.open(url, '_blank'); }
+      });
+      box.appendChild(send);
+    } catch (e) { toast('Не удалось создать код. Проверь интернет.'); }
+    btn.disabled = false;
+  });
+
+  $('pair-join-open').addEventListener('click', () => { $('pair-join').classList.toggle('hidden'); $('pair-join-code').focus(); });
+  $('pair-join-btn').addEventListener('click', async () => {
+    const code = $('pair-join-code').value.trim();
+    if (!code) { toast('Введи код партнёра.'); return; }
+    const btn = $('pair-join-btn'); btn.disabled = true;
+    try {
+      const data = await call({ action: 'joinPartner', code: code });
+      if (data.ok) { haptic('success'); await reloadAll(); toast('Готово, у вас общий бюджет' + (data.partner ? '. Партнёр: ' + data.partner : '')); }
+      else toast(errText(data.error));
+    } catch (e) { toast('Не удалось подключиться. Проверь интернет.'); }
+    btn.disabled = false;
+  });
+
+  // Выход: первое нажатие спрашивает, второе выходит
+  let leaveArmed = false;
+  $('pair-leave').addEventListener('click', async () => {
+    if (!leaveArmed) { leaveArmed = true; $('pair-leave').textContent = 'Нажми ещё раз, чтобы выйти'; return; }
+    $('pair-leave').textContent = 'Выхожу…';
+    try {
+      const data = await call({ action: 'leavePartner' });
+      if (data.ok) { await reloadAll(); toast('Готово, теперь у тебя отдельный бюджет'); }
+      else toast(errText(data.error));
+    } catch (e) { toast('Не удалось. Проверь интернет.'); }
+    leaveArmed = false; $('pair-leave').textContent = 'Выйти из общего бюджета';
+  });
+
+  // После смены таблицы перечитываем всё с нуля
+  async function reloadAll() {
+    state.summary = null; state.history = null; state.arcLoaded = false;
+    state.stale = { sum: true, hist: true };
+    $('pair-code').textContent = ''; $('pair-join').classList.add('hidden'); $('pair-join-code').value = '';
+    await init();
+  }
+
   // ---------- Регистрация ----------
   $('reg-send').addEventListener('click', async () => {
     const code = $('reg-code').value.trim(), email = $('reg-email').value.trim();
@@ -799,7 +911,8 @@
       const data = await call({ action: 'register', code: code, email: email });
       if (data.ok) {
         await init();
-        if (data.emailGiven) toast(data.shared ? 'Готово. Доступ к таблице отправлен на почту.' : 'Готово, но доступ к таблице выдать не вышло. Напиши владельцу.');
+        if (data.partner) toast('Готово, у вас общий бюджет. Партнёр: ' + data.partner);
+        else if (data.emailGiven) toast(data.shared ? 'Готово. Доступ к таблице отправлен на почту.' : 'Готово, но доступ к таблице выдать не вышло. Напиши владельцу.');
       } else toast(errText(data.error));
     } catch (e) { toast('Не удалось отправить. Проверь интернет.'); }
     btn.disabled = false; btn.textContent = 'Зарегистрироваться';
@@ -824,7 +937,7 @@
       box.textContent = '';
       data.users.forEach(u => {
         const r = el('div', 'user');
-        r.appendChild(el('span', u.status !== 'active' ? 'off' : '', u.name + (u.owner ? ' (ты)' : '') + (u.status !== 'active' ? ', отключён' : '')));
+        r.appendChild(el('span', u.status !== 'active' ? 'off' : '', u.name + (u.owner ? ' (ты)' : '') + (u.shared ? ', партнёр: ' + u.shared : '') + (u.status !== 'active' ? ', отключён' : '')));
         if (!u.owner) {
           const b = el('button', '', u.status === 'active' ? 'Отключить' : 'Включить');
           b.addEventListener('click', async () => {
