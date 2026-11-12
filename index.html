@@ -63,7 +63,8 @@
   .nav { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(14px + var(--safe-b)); width: calc(100% - 28px); max-width: 492px;
     height: 70px; border-radius: 26px; background: rgba(28,24,41,.88); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
     display: flex; justify-content: space-around; align-items: center; box-shadow: 0 0 0 1px var(--line); z-index: 5; }
-  .nav button { color: var(--muted); display: grid; justify-items: center; gap: 4px; font-size: 11px; width: 62px; }
+  .nav button { color: var(--muted); display: grid; justify-items: center; gap: 4px; font-size: 11px; width: 62px; padding: 4px 0; border-radius: 12px; }
+  .nav button:focus:not(:focus-visible) { outline: none; }
   .nav button.on { color: var(--text); }
   .nav svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
   .nav .plus { width: 58px; height: 58px; border-radius: 50%; background: var(--accent); color: var(--on-accent); display: grid; place-items: center;
@@ -501,16 +502,33 @@
     });
   }
 
+  // Начало периода приходит как '2026-11-02' или (со старым сервером) как 'Mon Nov 02 2026 00:00:00 GMT+0300 (...)'
+  const EN_MONTHS = { Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5, Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11 };
+  function parseStart(s) {
+    s = String(s);
+    let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (m) return new Date(+m[1], +m[2] - 1, +m[3]);
+    m = s.match(/([A-Z][a-z]{2}) (\d{1,2}) (\d{4})/);
+    if (m && m[1] in EN_MONTHS) return new Date(+m[3], EN_MONTHS[m[1]], +m[2]);
+    return null;
+  }
+  const monthGen = d => d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' }).replace(/^\d+\s/, '');
+  function periodLabel(p) {
+    const d = parseStart(p.start);
+    if (!d) return p.type;
+    if (p.type === 'Месяц') return cap(d.toLocaleDateString('ru-RU', { month: 'long' })) + ' ' + d.getFullYear();
+    const e = new Date(d); e.setDate(d.getDate() + 6);
+    return 'Неделя ' + (d.getMonth() === e.getMonth()
+      ? d.getDate() + '–' + e.getDate() + ' ' + monthGen(e)
+      : d.getDate() + ' ' + monthGen(d) + ' – ' + e.getDate() + ' ' + monthGen(e));
+  }
+
   function renderArchive(periods) {
     const box = $('s-arc'); box.textContent = '';
     if (!periods.length) { box.appendChild(el('div', 'empty', 'Итоги прошлых недель и месяцев появятся здесь.')); return; }
     periods.forEach(p => {
       const d = el('details', 'period'); const s = el('summary');
-      const parts = String(p.start).split('-');
-      const label = parts.length === 3 ? (p.type === 'Месяц'
-        ? cap(new Date(+parts[0], +parts[1] - 1, 1).toLocaleDateString('ru-RU', { month: 'long' })) + ' ' + parts[0]
-        : 'Неделя с ' + new Date(+parts[0], +parts[1] - 1, +parts[2]).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })) : p.type + ' ' + p.start;
-      s.append(el('span', '', label), el('span', 'num', fmt(total(p.sums))));
+      s.append(el('span', '', periodLabel(p)), el('span', 'num', fmt(total(p.sums))));
       d.appendChild(s);
       sorted(p.sums).forEach(c => { const r = el('div', 'cl'); r.append(el('span', 'muted', icon(c) + ' ' + c), el('span', 'num', fmt(p.sums[c]))); d.appendChild(r); });
       if (!sorted(p.sums).length) d.appendChild(el('div', 'cl muted', 'Трат не было'));

@@ -392,6 +392,13 @@ function summary_(ss) {
   };
 }
 
+// Дата начала периода в виде 'yyyy-MM-dd'. В старых листах «Архив» таблица
+// могла сама превратить текст в дату, поэтому принимаем оба варианта
+function dayKey_(v) {
+  if (v instanceof Date) return Utilities.formatDate(v, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  return String(v);
+}
+
 // Траты текущего месяца, новые сверху (для главной и вкладки «История»)
 function history_(ss) {
   const sh = ss.getSheetByName('Траты');
@@ -426,7 +433,7 @@ function archive_(ss, type, from, to) {
   const sh = ss.getSheetByName('Архив');
   const key = Utilities.formatDate(from, Session.getScriptTimeZone(), 'yyyy-MM-dd');
   const exists = sh.getDataRange().getValues().some(function (r) {
-    return r[0] === type && String(r[1]) === key;
+    return r[0] === type && dayKey_(r[1]) === key;
   });
   if (exists) return;
   const sums = sumByCategory_(ss, from, to);
@@ -439,8 +446,9 @@ function archiveList_(ss) {
   const rows = sh.getDataRange().getValues().slice(1);
   const map = {}, order = [];
   rows.forEach(function (r) {
-    const k = r[0] + '|' + r[1];
-    if (!map[k]) { map[k] = { type: r[0], start: String(r[1]), sums: {} }; order.push(k); }
+    const start = dayKey_(r[1]);
+    const k = r[0] + '|' + start;
+    if (!map[k]) { map[k] = { type: r[0], start: start, sums: {} }; order.push(k); }
     const c = canon_(r[2]);
     map[k].sums[c] = (map[k].sums[c] || 0) + Number(r[3]);
   });
