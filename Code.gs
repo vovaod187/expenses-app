@@ -455,14 +455,50 @@ function setUserStatus_(body) {
 // Работа с тратами (всё принимает таблицу пользователя ss)
 // ---------------------------------------------------------------------
 // Разбор и проверка траты из запроса. Возвращает null, если данные неверные
-// Курс Нацбанка РБ: сколько BYN стоит 1 единица валюты на дату.
-// Если на дату курса нет (выходные, ещё не опубликован), берём ближайший предыдущий.
-// Курсы кэшируются на 6 часов. Возвращает 0, если Нацбанк недоступен
+// ---------------------------------------------------------------------
+// Курсы валют: официальный курс Нацбанка РБ (сколько BYN стоит 1 единица).
+// Источник 1: Frankfurter (открытое зеркало курсов Нацбанка, доступно из любой страны).
+// Источник 2: сайт Нацбанка напрямую (из-за рубежа, где работают сервера Google, может не отвечать).
+// Если источник не ответил, 30 минут к нему не обращаемся, чтобы запись не зависала.
+// ---------------------------------------------------------------------
+const RATE_DOWN_SECONDS = 1800;
+
+function fetchJson_(url, host) {
+  const cache = CacheService.getScriptCache();
+  if (cache.get('down_' + host)) return null;
+  try {
+    const resp = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+    const code = resp.getResponseCode();
+    if (code === 200) return JSON.parse(resp.getContentText());
+    if (code >= 500 || code === 403 || code === 429) cache.put('down_' + host, '1', RATE_DOWN_SECONDS);
+    return null; // 404: на эту дату курса нет
+  } catch (err) {
+    console.error('Источник курсов ' + host + ' недоступен: ' + (err && err.message ? err.message : 'unknown'));
+    cache.put('down_' + host, '1', RATE_DOWN_SECONDS);
+    return null;
+  }
+}
+
+function sourcesDown_() {
+  const cache = CacheService.getScriptCache();
+  return !!(cache.get('down_frankfurter') && cache.get('down_nbrb'));
+}
+
+// Курс на конкретный день или 0
+function rateOnDay_(cur, key) {
+  const f = fetchJson_('https://api.frankfurter.dev/v2/rate/' + cur + '/BYN?date=' + key + '&providers=nbrb', 'frankfurter');
+  if (f && Number(f.rate) > 0) return Number(f.rate);
+  const n = fetchJson_('https://www.nbrb.by/api/exrates/rates/' + cur + '?parammode=2&ondate=' + key, 'nbrb');
+  if (n && Number(n.Cur_OfficialRate) > 0) return Number(n.Cur_OfficialRate) / (Number(n.Cur_Scale) || 1);
+  return 0;
+}
+
+// Курс на дату траты. Нет курса на дату (выходные, ещё не опубликован) — берём ближайший предыдущий.
+// Будущая дата — курс на сегодня. Курсы кэшируются на 6 часов. 0 — курс получить не удалось
 function nbrbRate_(cur, date) {
   if (cur === 'BYN') return 1;
   const tz = Session.getScriptTimeZone();
-  const now = new Date();
-  const d = new Date(Math.min(date.getTime(), now.getTime()));
+  const d = new Date(Math.min(date.getTime(), Date.now()));
   d.setHours(12, 0, 0, 0);
   const cache = CacheService.getScriptCache();
   for (let i = 0; i < 7; i++) {
@@ -470,28 +506,47 @@ function nbrbRate_(cur, date) {
     const ck = 'rate_' + cur + '_' + key;
     const cached = cache.get(ck);
     if (cached) return Number(cached);
-    try {
-      const resp = UrlFetchApp.fetch('https://www.nbrb.by/api/exrates/rates/' + cur + '?parammode=2&ondate=' + key,
-        { muteHttpExceptions: true });
-      if (resp.getResponseCode() === 200) {
-        const j = JSON.parse(resp.getContentText());
-        const rate = Number(j.Cur_OfficialRate) / (Number(j.Cur_Scale) || 1);
-        if (rate > 0) { cache.put(ck, String(rate), 21600); return rate; }
-      }
-    } catch (err) {
-      console.error('Нацбанк недоступен: ' + (err && err.message ? err.message : 'unknown'));
-      return 0;
-    }
+    if (sourcesDown_()) return 0;
+    const rate = rateOnDay_(cur, key);
+    if (rate > 0) { cache.put(ck, String(rate), 21600); return rate; }
     d.setDate(d.getDate() - 1);
   }
   return 0;
 }
 
-// Курсы на сегодня для предпросмотра в приложении
+// Курсы на сегодня для предпросмотра в приложении: одним запросом к Frankfurter,
+// если не вышло, то по одной валюте с запасным источником
 function rates_() {
   const res = {};
-  CURRENCIES.forEach(function (c) { if (c !== 'BYN') res[c] = nbrbRate_(c, new Date()); });
+  const list = CURRENCIES.filter(function (c) { return c !== 'BYN'; });
+  const cache = CacheService.getScriptCache();
+  const cached = cache.get('rates_today');
+  if (cached) return { ok: true, rates: JSON.parse(cached) };
+  const rows = fetchJson_('https://api.frankfurter.dev/v2/rates?base=BYN&quotes=' + list.join(',') + '&providers=nbrb', 'frankfurter');
+  if (Array.isArray(rows)) {
+    rows.forEach(function (r) { if (Number(r.rate) > 0 && list.indexOf(r.quote) !== -1) res[r.quote] = Math.round(1e8 / Number(r.rate)) / 1e8; });
+  }
+  list.forEach(function (c) { if (!res[c]) res[c] = nbrbRate_(c, new Date()); });
+  if (list.every(function (c) { return res[c] > 0; })) cache.put('rates_today', JSON.stringify(res), 3600);
   return { ok: true, rates: res };
+}
+
+// Запусти вручную, чтобы проверить источники курсов (результат в «Журнале выполнения»)
+function testRates() {
+  const cache = CacheService.getScriptCache();
+  cache.removeAll(['down_frankfurter', 'down_nbrb', 'rates_today']);
+  const key = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  [['frankfurter', 'https://api.frankfurter.dev/v2/rate/EUR/BYN?date=' + key + '&providers=nbrb'],
+   ['nbrb', 'https://www.nbrb.by/api/exrates/rates/EUR?parammode=2&ondate=' + key]].forEach(function (x) {
+    const t = Date.now();
+    try {
+      const resp = UrlFetchApp.fetch(x[1], { muteHttpExceptions: true });
+      console.log(x[0] + ': код ' + resp.getResponseCode() + ', ' + (Date.now() - t) + ' мс, ответ: ' + resp.getContentText().slice(0, 200));
+    } catch (err) {
+      console.log(x[0] + ': ошибка через ' + (Date.now() - t) + ' мс: ' + (err && err.message ? err.message : 'unknown'));
+    }
+  });
+  cache.removeAll(['down_frankfurter', 'down_nbrb']);
 }
 
 // Разбор и проверка траты из запроса. Возвращает null, если данные неверные,

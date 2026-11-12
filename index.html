@@ -674,8 +674,10 @@
       currency: canCurrency() ? cur : undefined,
       comment: $('comment').value, date: $('date').value };
     if (e) { payload.row = e.row; payload.orig = { date: e.date, amount: e.amount, category: e.category, comment: e.comment }; }
+    const slow = cur !== 'BYN' ? setTimeout(() => { btn.textContent = 'Получаю курс Нацбанка…'; }, 6000) : null;
     try {
       const data = await call(payload);
+      clearTimeout(slow);
       if (data.ok) {
         if (!e) {
           lastSelected = selected; try { localStorage.setItem('lastCat', selected); } catch (x) {}
@@ -689,7 +691,7 @@
           if (!e && n > prev && MILESTONES.indexOf(n) !== -1) celebrate(n);
         });
       } else { haptic('error'); toast(errText(data.error)); if (data.error === 'stale') { closeSheet(); afterChange(); } }
-    } catch (x) { haptic('error'); toast('Не удалось отправить. Проверь интернет.'); }
+    } catch (x) { clearTimeout(slow); haptic('error'); toast('Не удалось отправить. Проверь интернет.'); }
     btn.textContent = state.edit ? 'Сохранить' : 'Записать'; validate();
   });
 
