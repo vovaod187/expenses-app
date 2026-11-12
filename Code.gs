@@ -226,6 +226,7 @@ function doPost(e) {
     }
     if (action === 'summary') return out_(summary_(ss));
     if (action === 'archive') return out_(archiveList_(ss));
+    if (action === 'history') return out_(history_(ss));
     return out_(add_(ss, body));
   } catch (err) {
     console.error(err && err.message ? err.message : 'server error');
@@ -389,6 +390,34 @@ function summary_(ss) {
     week: sumByCategory_(ss, ws, new Date(ws.getFullYear(), ws.getMonth(), ws.getDate() + 7)),
     month: sumByCategory_(ss, ms, new Date(now.getFullYear(), now.getMonth() + 1, 1))
   };
+}
+
+// Траты текущего месяца, новые сверху (для главной и вкладки «История»)
+function history_(ss) {
+  const sh = ss.getSheetByName('Траты');
+  if (!sh) return { ok: true, items: [] };
+  const rows = sh.getDataRange().getValues();
+  const now = new Date();
+  const from = new Date(now.getFullYear(), now.getMonth(), 1);
+  const to = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  const tz = Session.getScriptTimeZone();
+  const items = [];
+  for (let i = 1; i < rows.length; i++) {
+    const d = rows[i][0], a = Number(rows[i][1]);
+    if (!(d instanceof Date) || !(a > 0) || d < from || d >= to) continue;
+    items.push({
+      row: i + 1,
+      date: Utilities.formatDate(d, tz, 'yyyy-MM-dd'),
+      amount: a,
+      category: canon_(rows[i][2]),
+      comment: String(rows[i][3] || '')
+    });
+  }
+  items.sort(function (x, y) {
+    if (x.date !== y.date) return x.date < y.date ? 1 : -1;
+    return y.row - x.row;
+  });
+  return { ok: true, items: items.slice(0, 300) };
 }
 
 // Запись итогов периода в лист «Архив». Повторный запуск не создаёт дубли
