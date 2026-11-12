@@ -77,6 +77,33 @@
   .confetti { position: fixed; inset: 0; pointer-events: none; z-index: 30; overflow: hidden; }
   .confetti i { position: absolute; top: -20px; width: 8px; height: 14px; border-radius: 2px; animation: fall 1.8s cubic-bezier(.3,.6,.5,1) forwards; }
   @keyframes fall { to { transform: translate(var(--dx), 105vh) rotate(var(--rot)); opacity: .9; } }
+  /* Итоги года */
+  .year-btn { width: 100%; margin-top: 12px; padding: 14px 16px; border-radius: 16px; text-align: left; display: flex; justify-content: space-between; align-items: center;
+    background: linear-gradient(120deg, #2A2245, #1C1829); box-shadow: inset 0 0 0 1px rgba(183,162,255,.25); font-weight: 600; }
+  .year-btn span { color: var(--accent-soft); font-weight: 500; font-size: 14px; }
+  .banner { margin-top: 18px; }
+  .story { position: fixed; inset: 0; z-index: 40; color: var(--text); overflow: hidden; user-select: none;
+    background: radial-gradient(120% 80% at 50% 0%, #3B2A7A 0%, #1A1430 55%, #120F1C 100%); }
+  .story .bars { position: absolute; top: calc(12px + env(safe-area-inset-top, 0px)); left: 16px; right: 16px; display: flex; gap: 4px; z-index: 2; }
+  .story .bars i { flex: 1; height: 3px; border-radius: 2px; background: rgba(255,255,255,.22); }
+  .story .bars i.on { background: #fff; }
+  .story .close { position: absolute; top: calc(26px + env(safe-area-inset-top, 0px)); right: 14px; z-index: 3; width: 36px; height: 36px; border-radius: 50%;
+    background: rgba(255,255,255,.12); color: #fff; font-size: 20px; }
+  .story .slide { position: absolute; inset: 0; padding: 90px 28px 120px; display: flex; flex-direction: column; justify-content: center; max-width: 520px; margin: 0 auto;
+    animation: slideIn .35s ease; }
+  @keyframes slideIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+  .story .kicker { color: var(--accent-soft); font-size: 16px; margin: 0 0 10px; }
+  .story .hero-num { font-family: var(--num); font-weight: 500; font-size: 64px; line-height: 1.05; margin: 0; overflow-wrap: anywhere; }
+  .story .hero-word { font-family: var(--num); font-weight: 500; font-size: 46px; line-height: 1.1; margin: 0; }
+  .story .unit { font-size: 22px; color: var(--muted); margin-left: 6px; font-family: "Inter", sans-serif; }
+  .story .sub { color: #CFC8E0; font-size: 17px; margin: 14px 0 0; line-height: 1.45; }
+  .story .list { margin-top: 26px; }
+  .story .li { margin-bottom: 14px; }
+  .story .li .l1 { display: flex; justify-content: space-between; font-size: 15px; }
+  .story .li .bar { background: rgba(255,255,255,.1); }
+  .story .actions { position: absolute; left: 24px; right: 24px; bottom: calc(30px + env(safe-area-inset-bottom, 0px)); display: flex; gap: 10px; z-index: 3; max-width: 472px; margin: 0 auto; }
+  .story .actions button { flex: 1; height: 52px; border-radius: 16px; font-weight: 600; }
+  .story .tap-hint { position: absolute; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); left: 0; right: 0; text-align: center; color: rgba(255,255,255,.45); font-size: 13px; }
   .danger-link { display: block; margin: 22px auto 0; color: var(--danger); font-size: 15px; padding: 10px; }
   .big { font-size: 46px; line-height: 1.1; margin: 4px 0 0; }
   .hero-sub { position: relative; margin-top: 12px; color: var(--muted); }
@@ -219,6 +246,7 @@
       <div class="hero-sub" id="h-sub"></div>
       <button class="hint hidden" id="h-hint">Поставь бюджет на месяц, и здесь будет видно, сколько можно тратить в день</button>
     </div>
+    <button class="year-btn banner hidden" id="year-banner"><b id="year-banner-t">Твой год в тратах</b><span>Смотреть</span></button>
     <div id="h-recent-box">
       <h2>Последние траты</h2>
       <div id="h-recent"></div>
@@ -231,6 +259,7 @@
     <div class="seg" role="tablist">
       <button data-p="week">Неделя</button><button data-p="month" class="on">Месяц</button>
     </div>
+    <button class="year-btn hidden" id="year-open"><b id="year-open-t">Мой год</b><span>Смотреть</span></button>
     <div class="donut" id="s-donut"><div class="c"><small id="s-label"></small><div class="big num" id="s-total">0,00</div><small>BYN</small></div></div>
     <div id="s-list"></div>
     <div id="s-who-box" class="hidden">
@@ -356,6 +385,17 @@
     <button data-v="set"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/></svg>Настройки</button>
   </nav>
 
+  <div class="story hidden" id="story" role="dialog" aria-label="Итоги года">
+    <div class="bars" id="story-bars"></div>
+    <button class="close" id="story-close" aria-label="Закрыть">×</button>
+    <div id="story-slide"></div>
+    <div class="tap-hint" id="story-hint">Нажми справа, чтобы листать</div>
+    <div class="actions hidden" id="story-actions">
+      <button class="btn2" id="story-share">Поделиться</button>
+      <button class="cta" id="story-done">Готово</button>
+    </div>
+  </div>
+
   <div class="toast" id="toast" role="status"></div>
 
 <script>
@@ -434,6 +474,9 @@
   const canEdit = () => !!(state.me && state.me.version >= 2);
   const canPair = () => !!(state.me && state.me.version >= 3);
   const canRemind = () => !!(state.me && state.me.version >= 4);
+  const canYear = () => !!(state.me && state.me.version >= 6);
+  // В начале января показываем итоги прошлого года
+  const recapYear = () => { const n = new Date(); return n.getMonth() === 0 && n.getDate() <= 15 ? n.getFullYear() - 1 : n.getFullYear(); };
   const canCurrency = () => !!(state.me && state.me.version >= 5 && Array.isArray(state.me.currencies));
   const shared = () => !!(state.me && state.me.partner);
   const VIEWS = ['home', 'sum', 'hist', 'set'];
@@ -474,6 +517,11 @@
       $('pair').classList.toggle('hidden', !canPair());
       $('remind-box').classList.toggle('hidden', !canRemind());
       buildCurs();
+      const ry = recapYear(), nd = new Date();
+      $('year-open').classList.toggle('hidden', !canYear());
+      $('year-open-t').textContent = 'Мой ' + ry + ' год';
+      $('year-banner').classList.toggle('hidden', !(canYear() && ((nd.getMonth() === 11 && nd.getDate() >= 20) || (nd.getMonth() === 0 && nd.getDate() <= 15))));
+      $('year-banner-t').textContent = 'Твой ' + ry + ' год в тратах';
       $('remind').setAttribute('aria-checked', me.reminder !== false);
       $('lim-cat').textContent = '';
       state.cats.forEach(c => { const o = el('option', '', icon(c) + ' ' + c); o.value = c; $('lim-cat').appendChild(o); });
@@ -945,6 +993,117 @@
       else toast(errText(res.error));
     } catch (e) { toast('Не удалось сохранить. Проверь интернет.'); }
     btn.disabled = false;
+  });
+
+  // ---------- Итоги года ----------
+  let slides = [], slideIdx = 0, recap = null;
+  const pct = (a, t) => t ? Math.round(a / t * 100) : 0;
+  const dayLong = s => { const p = String(s).split('-'); return new Date(+p[0], +p[1] - 1, +p[2]).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' }); };
+
+  function buildSlides(r) {
+    const S = [];
+    const yearLabel = r.year + (r.partial ? ' год, пока что' : ' год');
+    if (!r.count) {
+      S.push({ kicker: yearLabel, word: 'Трат пока нет', sub: 'Записывай траты, и здесь появятся итоги года.', last: true });
+      return S;
+    }
+    S.push({ kicker: 'Твой ' + yearLabel + ' в тратах', num: fmt(r.total), unit: 'BYN',
+      sub: r.count + ' ' + plural(r.count, ['трата', 'траты', 'трат']) + '\nДней с записями: ' + r.daysWithEntries + ' из ' + r.daysInPeriod });
+    const top = r.categories[0];
+    S.push({ kicker: 'Больше всего ушло на', word: icon(top.name) + ' ' + top.name,
+      sub: pct(top.sum, r.total) + '% всех трат, ' + fmt(top.sum) + ' BYN',
+      list: r.categories.slice(0, 4).map(c => ({ name: icon(c.name) + ' ' + c.name, val: fmt(c.sum), w: pct(c.sum, top.sum) })) });
+    if (r.topMonth) S.push({ kicker: 'Самый дорогой месяц', word: cap(r.topMonth.name), sub: fmt(r.topMonth.sum) + ' BYN' +
+      (r.topDay ? '\nА самый дорогой день — ' + dayLong(r.topDay.date) + ': ' + fmt(r.topDay.sum) + ' BYN' : '') });
+    if (r.biggest) S.push({ kicker: 'Самая крупная трата', num: fmt(r.biggest.amount), unit: 'BYN',
+      sub: (r.biggest.comment || r.biggest.category) + ', ' + dayLong(r.biggest.date) +
+        (r.biggest.currency ? '\n' + fmt(r.biggest.orig) + ' ' + r.biggest.currency : '') });
+    if (r.longestStreak >= 2) S.push({ kicker: 'Самая длинная серия', num: String(r.longestStreak), unit: plural(r.longestStreak, ['день', 'дня', 'дней']),
+      sub: 'подряд с записями' });
+    if (r.favorite) S.push({ kicker: 'Чаще всего в комментариях', word: r.favorite.name,
+      sub: r.favorite.n + ' ' + plural(r.favorite.n, ['раз', 'раза', 'раз']) + ', всего ' + fmt(r.favorite.sum) + ' BYN' });
+    const fx = Object.keys(r.foreign || {});
+    if (fx.length) S.push({ kicker: 'Траты в валюте', num: fmt(fx.reduce((s, c) => s + r.foreign[c], 0)), unit: 'BYN',
+      sub: 'Валюты: ' + fx.join(', ') + '. Всё пересчитано по курсу Нацбанка.' });
+    const who = Object.keys(r.who || {});
+    if (shared() && who.length >= 2) S.push({ kicker: 'Кто сколько внёс', word: 'Общий бюджет',
+      list: who.sort((a, b) => r.who[b] - r.who[a]).map(n => ({ name: n, val: fmt(r.who[n]) + ' · ' + pct(r.who[n], r.total) + '%', w: pct(r.who[n], r.total) })) });
+    let cmp = '';
+    if (r.prevTotal > 0 && !r.partial) {
+      const d = r.total - r.prevTotal;
+      cmp = 'По сравнению с ' + (r.year - 1) + ' годом ' + (d > 0 ? 'больше' : 'меньше') + ' на ' + pct(Math.abs(d), r.prevTotal) + '%.';
+    }
+    S.push({ kicker: 'В среднем в день', num: fmt(r.avgPerDay), unit: 'BYN',
+      sub: cmp || (r.partial ? 'Год ещё не закончился, итоги обновляются вместе с тратами.' : ''), last: true });
+    return S;
+  }
+
+  function renderSlide() {
+    const sl = slides[slideIdx], box = $('story-slide'); box.textContent = '';
+    const d = el('div', 'slide');
+    d.appendChild(el('p', 'kicker', sl.kicker));
+    if (sl.num) { const h = el('p', 'hero-num', sl.num); h.appendChild(el('span', 'unit', sl.unit || '')); d.appendChild(h); }
+    if (sl.word) d.appendChild(el('p', 'hero-word', sl.word));
+    if (sl.sub) sl.sub.split('\n').forEach(t => d.appendChild(el('p', 'sub', t)));
+    if (sl.list) {
+      const l = el('div', 'list');
+      sl.list.forEach(x => {
+        const li = el('div', 'li'), r1 = el('div', 'l1');
+        r1.append(el('span', '', x.name), el('span', 'num', x.val));
+        const bar = el('div', 'bar'), i = el('i'); i.style.width = Math.max(4, x.w) + '%'; bar.appendChild(i);
+        li.append(r1, bar); l.appendChild(li);
+      });
+      d.appendChild(l);
+    }
+    box.appendChild(d);
+    $('story-bars').querySelectorAll('i').forEach((b, i) => b.classList.toggle('on', i <= slideIdx));
+    $('story-actions').classList.toggle('hidden', !sl.last);
+    $('story-share').classList.toggle('hidden', !recap || !recap.count);
+    $('story-hint').classList.toggle('hidden', !!sl.last);
+  }
+
+  async function openYear() {
+    const btns = [$('year-open'), $('year-banner')]; btns.forEach(b => b.disabled = true);
+    try {
+      const r = await call({ action: 'yearRecap', year: recapYear() });
+      if (!r.ok) { toast(errText(r.error)); return; }
+      recap = r; slides = buildSlides(r); slideIdx = 0;
+      const bars = $('story-bars'); bars.textContent = '';
+      slides.forEach(() => bars.appendChild(el('i')));
+      $('story').classList.remove('hidden');
+      try { tg.BackButton.show(); } catch (e) {}
+      haptic('success');
+      renderSlide();
+    } catch (e) { toast('Не удалось загрузить итоги. Проверь интернет.'); }
+    finally { btns.forEach(b => b.disabled = false); }
+  }
+  function closeYear() {
+    $('story').classList.add('hidden');
+    if (!$('sheet').classList.contains('open')) { try { tg.BackButton.hide(); } catch (e) {} }
+  }
+  $('year-open').addEventListener('click', openYear);
+  $('year-banner').addEventListener('click', openYear);
+  $('story-close').addEventListener('click', e => { e.stopPropagation(); closeYear(); });
+  $('story-done').addEventListener('click', e => { e.stopPropagation(); closeYear(); });
+  try { tg.BackButton.onClick(() => { if (!$('story').classList.contains('hidden')) closeYear(); }); } catch (e) {}
+  $('story').addEventListener('click', e => {
+    if (e.target.closest('.actions') || e.target.closest('.close')) return;
+    const left = e.clientX < window.innerWidth / 3;
+    if (left && slideIdx > 0) slideIdx--;
+    else if (!left && slideIdx < slides.length - 1) slideIdx++;
+    else return;
+    try { tg.HapticFeedback.selectionChanged(); } catch (x) {}
+    renderSlide();
+  });
+  $('story-share').addEventListener('click', e => {
+    e.stopPropagation();
+    if (!recap) return;
+    const top = recap.categories[0];
+    const text = 'Мой ' + recap.year + ' год в тратах: ' + fmt(recap.total) + ' BYN, ' + recap.count + ' ' + plural(recap.count, ['трата', 'траты', 'трат']) +
+      (top ? '. Больше всего на ' + top.name.toLowerCase() + ' (' + pct(top.sum, recap.total) + '%)' : '') +
+      (recap.longestStreak >= 2 ? '. Самая длинная серия записей: ' + recap.longestStreak + ' ' + plural(recap.longestStreak, ['день', 'дня', 'дней']) : '') + '.';
+    const url = 'https://t.me/share/url?url=' + encodeURIComponent(BOT_URL) + '&text=' + encodeURIComponent(text);
+    try { tg.openTelegramLink(url); } catch (x) { window.open(url, '_blank'); }
   });
 
   // ---------- Напоминание ----------

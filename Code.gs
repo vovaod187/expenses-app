@@ -208,7 +208,7 @@ function doPost(e) {
         categories: ALLOWED,
         // Версия сервера: приложение включает новые функции, только если сервер их знает
         // (старый сервер принял бы незнакомое действие за запись новой траты)
-        version: 5,
+        version: 6,
         currencies: CURRENCIES,
         reminder: user ? user.reminder : true,
         partner: user && user.status === 'active' ? partnerNames_(user) : ''
@@ -238,6 +238,7 @@ function doPost(e) {
     if (action === 'archive') return out_(archiveList_(ss));
     if (action === 'history') return out_(history_(ss));
     if (action === 'rates') return out_(rates_());
+    if (action === 'yearRecap') return out_(yearRecap_(ss, body.year));
     if (action === 'update') return out_(update_(ss, body, user));
     if (action === 'partnerInvite') return out_(createPartnerInvite_(user));
     if (action === 'setReminder') return out_(setReminder_(user, body));
@@ -847,6 +848,114 @@ function sendReminders() {
     text += '\n\nВыключить напоминание можно в приложении: Настройки.';
     sendMessage_(u.id, text);
   });
+}
+
+// ---------------------------------------------------------------------
+// Итоги года
+// ---------------------------------------------------------------------
+const MONTHS_RU = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь'];
+const r2_ = function (n) { return Math.round(n * 100) / 100; };
+
+function yearRecap_(ss, yearArg) {
+  const now = new Date();
+  const year = Number(yearArg) >= 2000 && Number(yearArg) <= now.getFullYear() ? Number(yearArg) : now.getFullYear();
+  const from = new Date(year, 0, 1), to = new Date(year + 1, 0, 1), prevFrom = new Date(year - 1, 0, 1);
+  const tz = Session.getScriptTimeZone();
+  const key = function (d) { return Utilities.formatDate(d, tz, 'yyyy-MM-dd'); };
+  const rows = expenseRows_(ss);
+  let total = 0, count = 0, prevTotal = 0, biggest = null;
+  const cats = {}, months = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], days = {}, comments = {}, foreign = {}, who = {};
+  for (let i = 1; i < rows.length; i++) {
+    const d = rows[i][0], a = Number(rows[i][1]);
+    if (!(d instanceof Date) || !(a > 0)) continue;
+    if (d >= prevFrom && d < from) { prevTotal += a; continue; }
+    if (d < from || d >= to) continue;
+    const c = canon_(rows[i][2]), k = key(d), cm = String(rows[i][3] || '').trim(), cur = String(rows[i][5] || ''), w = String(rows[i][4] || '');
+    total += a; count++;
+    cats[c] = (cats[c] || 0) + a;
+    months[d.getMonth()] += a;
+    days[k] = (days[k] || 0) + a;
+    if (cm) { const lc = cm.toLowerCase(); comments[lc] = comments[lc] || { name: cm, n: 0, sum: 0 }; comments[lc].n++; comments[lc].sum += a; }
+    if (cur) foreign[cur] = (foreign[cur] || 0) + a;
+    if (w) who[w] = (who[w] || 0) + a;
+    if (!biggest || a > biggest.amount) {
+      biggest = { amount: a, category: c, comment: cm, date: k, currency: cur, orig: Number(rows[i][6]) || 0 };
+    }
+  }
+  const categories = Object.keys(cats).sort(function (x, y) { return cats[y] - cats[x]; })
+    .map(function (c) { return { name: c, sum: r2_(cats[c]) }; });
+  let topMonth = null;
+  months.forEach(function (v, m) { if (v > 0 && (!topMonth || v > topMonth.sum)) topMonth = { month: m, name: MONTHS_RU[m], sum: r2_(v) }; });
+  let topDay = null;
+  Object.keys(days).forEach(function (k) { if (!topDay || days[k] > topDay.sum) topDay = { date: k, sum: r2_(days[k]) }; });
+  // Самая длинная серия дней подряд с тратами
+  const sortedDays = Object.keys(days).sort();
+  let longest = 0, run = 0, prev = null;
+  sortedDays.forEach(function (k) {
+    const p = k.split('-'), cur = new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]));
+    run = prev && Math.round((cur - prev) / 86400000) === 1 ? run + 1 : 1;
+    if (run > longest) longest = run;
+    prev = cur;
+  });
+  let favorite = null;
+  Object.keys(comments).forEach(function (k) {
+    const c = comments[k];
+    if (c.n >= 3 && (!favorite || c.n > favorite.n)) favorite = { name: c.name, n: c.n, sum: r2_(c.sum) };
+  });
+  const partial = year === now.getFullYear();
+  const daysInPeriod = partial
+    ? Math.floor((new Date(now.getFullYear(), now.getMonth(), now.getDate()) - from) / 86400000) + 1
+    : Math.round((to - from) / 86400000);
+  Object.keys(foreign).forEach(function (c) { foreign[c] = r2_(foreign[c]); });
+  Object.keys(who).forEach(function (w) { who[w] = r2_(who[w]); });
+  return {
+    ok: true, year: year, partial: partial, total: r2_(total), count: count,
+    daysWithEntries: sortedDays.length, daysInPeriod: daysInPeriod,
+    avgPerDay: daysInPeriod ? r2_(total / daysInPeriod) : 0,
+    categories: categories, topMonth: topMonth, topDay: topDay, biggest: biggest ? Object.assign(biggest, { amount: r2_(biggest.amount) }) : null,
+    longestStreak: longest, favorite: favorite, foreign: foreign, who: who, prevTotal: r2_(prevTotal)
+  };
+}
+
+// Текст сообщения с итогами года
+function recapText_(r) {
+  const lines = ['Итоги ' + r.year + ' года', ''];
+  lines.push('Потрачено: ' + fmt_(r.total) + ' BYN, ' + r.count + ' ' + plural_(r.count, ['трата', 'траты', 'трат']) + '.');
+  lines.push('В среднем ' + fmt_(r.avgPerDay) + ' BYN в день.');
+  if (r.categories.length) {
+    const top = r.categories[0];
+    lines.push('Больше всего ушло на: ' + top.name + ' (' + Math.round(top.sum / r.total * 100) + '%).');
+  }
+  if (r.topMonth) lines.push('Самый дорогой месяц: ' + r.topMonth.name + ' (' + fmt_(r.topMonth.sum) + ').');
+  if (r.biggest) lines.push('Самая крупная трата: ' + fmt_(r.biggest.amount) + (r.biggest.comment ? ', ' + r.biggest.comment : ', ' + r.biggest.category) + '.');
+  if (r.longestStreak >= 2) lines.push('Самая длинная серия: ' + r.longestStreak + ' ' + plural_(r.longestStreak, ['день', 'дня', 'дней']) + ' подряд.');
+  if (r.favorite) lines.push('Чаще всего: ' + r.favorite.name + ' (' + r.favorite.n + ' ' + plural_(r.favorite.n, ['раз', 'раза', 'раз']) + ').');
+  if (r.prevTotal > 0) {
+    const diff = r.total - r.prevTotal, pct = Math.round(Math.abs(diff) / r.prevTotal * 100);
+    lines.push('', 'По сравнению с ' + (r.year - 1) + ' годом: ' + (diff > 0 ? 'больше' : 'меньше') + ' на ' + pct + '%.');
+  }
+  lines.push('', 'Подробные итоги с карточками в приложении: Итоги → «Мой ' + r.year + ' год».');
+  return lines.join('\n');
+}
+
+// По расписанию: срабатывает 31-го числа месяцев, но отправляет только 31 декабря
+function sendYearRecaps() {
+  const now = new Date();
+  if (now.getMonth() !== 11 || now.getDate() !== 31) return;
+  const cache = {};
+  forEachActiveUser_(function (u, ss) {
+    const r = cache[u.sheetId] || (cache[u.sheetId] = yearRecap_(ss, now.getFullYear()));
+    if (!r.count) return;
+    sendMessage_(u.id, recapText_(r));
+  });
+}
+
+// Запусти один раз вручную: итоги года 31 декабря около 12:00
+function setupYearTrigger() {
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === 'sendYearRecaps') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('sendYearRecaps').timeBased().onMonthDay(31).atHour(12).create();
 }
 
 // Запусти один раз вручную: напоминание каждый день около 21:00
