@@ -45,6 +45,31 @@
   .ring .val { stroke: var(--accent); filter: drop-shadow(0 0 10px var(--accent)); transition: stroke-dasharray .8s ease; }
   .ring-c { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; }
   .ring-c small { font-size: 14px; color: var(--muted); }
+  .ring .val.over { stroke: var(--danger); filter: drop-shadow(0 0 10px var(--danger)); }
+  .big.over { color: var(--danger); }
+  .hint { display: block; margin: 10px auto 0; color: var(--accent-soft); font-size: 14px; max-width: 300px; }
+
+  /* Лимиты */
+  .bar { height: 5px; border-radius: 3px; background: var(--raised); margin-top: 8px; overflow: hidden; }
+  .bar i { display: block; height: 100%; border-radius: 3px; background: var(--accent); }
+  .bar i.warn { background: var(--warn); }
+  .bar i.over { background: var(--danger); }
+  .note { font-size: 12.5px; margin-top: 5px; color: var(--warn); }
+  .note.over { color: var(--danger); }
+  .lim-of { color: var(--muted); font-family: "Inter", sans-serif; font-size: 13px; }
+  .tap { cursor: pointer; }
+  .tap:active { opacity: .7; }
+  .inrow { display: flex; gap: 8px; }
+  .inrow .input { flex: 1; }
+  .btn-s { padding: 0 16px; border-radius: 12px; background: var(--accent); color: var(--on-accent); font-weight: 600; }
+  .small { font-size: 13px; }
+  .lrow { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+  .lrow .t { flex: 1; min-width: 0; }
+  .lrow .x { width: 32px; height: 32px; border-radius: 10px; background: var(--raised); color: var(--muted); font-size: 18px; }
+  .card .btn2 { background: var(--raised); }
+  .card .seg { background: var(--raised); margin-top: 12px; }
+  .card .seg button.on { background: #3A3254; }
+  .danger-link { display: block; margin: 22px auto 0; color: var(--danger); font-size: 15px; padding: 10px; }
   .big { font-size: 46px; line-height: 1.1; margin: 4px 0 0; }
   .hero-sub { position: relative; margin-top: 12px; color: var(--muted); }
   .hero-sub b { color: var(--text); font-weight: 600; }
@@ -111,6 +136,12 @@
   .donut .big { font-size: 28px; }
   .cl { display: flex; justify-content: space-between; align-items: center; padding: 11px 0; border-bottom: 1px solid var(--line); }
   .cl:last-child { border-bottom: 0; }
+  .cl-box { padding-bottom: 2px; border-bottom: 1px solid var(--line); }
+  .cl-box:last-child { border-bottom: 0; }
+  .cl-box .bar { margin-top: 6px; }
+  .cl-box .note { margin-bottom: 8px; }
+  .cl-box > .cl { border-bottom: 0; }
+  .cl-box > .bar:last-child { margin-bottom: 11px; }
   .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 10px; }
   details.period { border-bottom: 1px solid var(--line); }
   details.period summary { list-style: none; display: flex; justify-content: space-between; padding: 13px 0; cursor: pointer; }
@@ -170,9 +201,10 @@
           <circle class="track" cx="118" cy="118" r="98" fill="none" stroke-width="12"/>
           <circle class="val" id="h-ring" cx="118" cy="118" r="98" fill="none" stroke-width="12" stroke-linecap="round" stroke-dasharray="0 616"/>
         </svg>
-        <div class="ring-c"><small>Потрачено за месяц</small><div class="big num" id="h-total">0,00</div><small>BYN</small></div>
+        <div class="ring-c"><small id="h-cap">Потрачено за месяц</small><div class="big num" id="h-total">0,00</div><small>BYN</small></div>
       </div>
       <div class="hero-sub" id="h-sub"></div>
+      <button class="hint hidden" id="h-hint">Поставь бюджет на месяц, и здесь будет видно, сколько можно тратить в день</button>
     </div>
     <div id="h-recent-box">
       <h2>Последние траты</h2>
@@ -205,6 +237,33 @@
       <p id="set-name"></p>
       <p class="muted">Отчёт за неделю приходит в Telegram по понедельникам, за месяц — 1-го числа. Если отчёты не приходят, нажми Start в чате с ботом.</p>
     </div>
+    <div id="money" class="hidden">
+      <h2>Бюджет на месяц</h2>
+      <div class="card">
+        <div class="inrow">
+          <input class="input" id="budget" type="text" inputmode="decimal" placeholder="Например, 1000" autocomplete="off" aria-label="Бюджет на месяц">
+          <button class="btn-s" id="budget-save">Сохранить</button>
+        </div>
+        <p class="muted small" style="margin-top:8px">По желанию. С бюджетом на главной видно, сколько можно потратить сегодня. Чтобы убрать, сотри сумму и сохрани.</p>
+      </div>
+      <h2>Лимиты по категориям</h2>
+      <div class="card">
+        <div id="lim-list"></div>
+        <button class="btn2" id="lim-add">Добавить лимит</button>
+        <div id="lim-form" class="hidden">
+          <label class="field" for="lim-cat">Категория</label>
+          <select class="input" id="lim-cat"></select>
+          <div class="seg" id="lim-period"><button data-p="week" class="on">На неделю</button><button data-p="month">На месяц</button></div>
+          <label class="field" for="lim-amount">Сумма, BYN</label>
+          <input class="input" id="lim-amount" type="text" inputmode="decimal" autocomplete="off">
+          <div class="inrow" style="margin-top:12px">
+            <button class="btn2" id="lim-cancel">Отмена</button>
+            <button class="cta" id="lim-save" style="height:48px;border-radius:14px">Сохранить</button>
+          </div>
+        </div>
+        <p class="muted small" style="margin-top:10px">Когда потрачено 80% лимита, бот один раз напишет в Telegram.</p>
+      </div>
+    </div>
     <div id="admin" class="hidden">
       <h2>Пользователи</h2>
       <div class="card">
@@ -218,7 +277,7 @@
   <!-- Новая трата -->
   <div class="sheet" id="sheet" aria-hidden="true">
     <div class="view">
-      <div class="top"><h1 class="title">Новая трата</h1><button class="link" id="add-close">Закрыть</button></div>
+      <div class="top"><h1 class="title" id="sheet-title">Новая трата</h1><button class="link" id="add-close">Закрыть</button></div>
       <div class="amount">
         <input id="amount" type="text" inputmode="decimal" placeholder="0" autocomplete="off" aria-label="Сумма">
         <small>BYN</small>
@@ -233,6 +292,7 @@
           <input class="input" id="date" type="date">
         </div>
       </details>
+      <button class="danger-link hidden" id="del">Удалить трату</button>
     </div>
     <button class="cta" id="send" disabled>Записать</button>
   </div>
@@ -277,7 +337,8 @@
     disabled: 'Доступ отключён владельцем.',
     cannot_change_owner: 'Владельца отключить нельзя.',
     'bad data': 'Проверь сумму и категорию.',
-    'server error': 'Ошибка на сервере. Попробуй ещё раз.'
+    'server error': 'Ошибка на сервере. Попробуй ещё раз.',
+    stale: 'Запись успела измениться. Список обновлён, попробуй ещё раз.'
   };
   const errText = e => ERRORS[e] || ('Ошибка: ' + e);
 
@@ -314,7 +375,8 @@
   const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
 
   // ---------- Навигация ----------
-  const state = { me: null, cats: [], history: null, period: 'month', summary: null, stale: { sum: true, hist: true } };
+  const state = { me: null, cats: [], history: null, period: 'month', summary: null, stale: { sum: true, hist: true }, edit: null };
+  const canEdit = () => !!(state.me && state.me.version >= 2);
   const VIEWS = ['home', 'sum', 'hist', 'set'];
   function show(name) {
     VIEWS.forEach(v => $('v-' + v).classList.toggle('hidden', v !== name));
@@ -322,7 +384,7 @@
     window.scrollTo(0, 0);
     if (name === 'sum') { if (state.stale.sum || !state.arcLoaded) loadSummary(); else renderSummary(); }
     if (name === 'hist') { if (state.stale.hist) loadHistory(); else renderHistory(); }
-    if (name === 'set' && state.me && state.me.isAdmin) loadUsers();
+    if (name === 'set') { renderSettings(); if (state.me && state.me.isAdmin) loadUsers(); }
   }
   document.querySelectorAll('#nav [data-v]').forEach(b => b.addEventListener('click', () => show(b.dataset.v)));
 
@@ -349,6 +411,9 @@
       buildCats();
       $('set-name').textContent = me.name ? 'Аккаунт: ' + me.name : '';
       $('admin').classList.toggle('hidden', !me.isAdmin);
+      $('money').classList.toggle('hidden', !canEdit());
+      $('lim-cat').textContent = '';
+      state.cats.forEach(c => { const o = el('option', '', icon(c) + ' ' + c); o.value = c; $('lim-cat').appendChild(o); });
       $('h-month').textContent = cap(new Date().toLocaleDateString('ru-RU', { month: 'long' }));
       $('loading').classList.add('hidden');
       $('v-reg').classList.add('hidden');
@@ -375,17 +440,46 @@
   const total = obj => Object.keys(obj || {}).reduce((s, k) => s + (Number(obj[k]) || 0), 0);
 
   function renderHome() {
-    const t = total(state.summary.month), w = total(state.summary.week);
-    $('h-total').textContent = fmt(t);
+    const s = state.summary, t = total(s.month), w = total(s.week);
+    const budget = Number(s.budget) || 0, today = Number(s.today) || 0;
     const now = new Date(), days = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-    const len = 2 * Math.PI * 98;
-    $('h-ring').setAttribute('stroke-dasharray', (len * now.getDate() / days).toFixed(1) + ' ' + len.toFixed(1));
-    $('h-sub').innerHTML = '';
-    $('h-sub').append('За неделю ', el('b', 'num', fmt(w)), ' · прошло ' + now.getDate() + ' из ' + days + ' дней');
+    const left = days - now.getDate() + 1;              // дней до конца месяца, включая сегодня
+    const len = 2 * Math.PI * 98, sub = $('h-sub');
+    let frac, over = false;
+    sub.textContent = '';
+    if (budget > 0) {
+      const before = t - today;                         // потрачено до сегодняшнего дня
+      if (before >= budget) {
+        $('h-cap').textContent = 'Бюджет месяца превышен на'; $('h-total').textContent = fmt(t - budget); over = true;
+      } else {
+        const can = (budget - before) / left - today;   // норма на сегодня минус уже потраченное сегодня
+        $('h-cap').textContent = can >= 0 ? 'Можно потратить сегодня' : 'Сегодня сверх нормы';
+        $('h-total').textContent = fmt(Math.abs(can)); over = can < 0;
+      }
+      frac = Math.min(t / budget, 1);
+      sub.append('Потрачено за месяц ', el('b', 'num', fmt(t)), ' из ' + fmtLimit(budget) + ' BYN');
+      $('h-hint').classList.add('hidden');
+    } else {
+      $('h-cap').textContent = 'Потрачено за месяц'; $('h-total').textContent = fmt(t);
+      frac = now.getDate() / days;
+      sub.append('За неделю ', el('b', 'num', fmt(w)), ' · прошло ' + now.getDate() + ' из ' + days + ' дней');
+      $('h-hint').classList.toggle('hidden', !canEdit());
+    }
+    $('h-total').classList.toggle('over', over);
+    $('h-ring').classList.toggle('over', budget > 0 && t > budget);
+    $('h-ring').setAttribute('stroke-dasharray', (len * frac).toFixed(1) + ' ' + len.toFixed(1));
   }
+  $('h-hint').addEventListener('click', () => { show('set'); setTimeout(() => $('budget').focus(), 100); });
+  const fmtLimit = n => (n % 1 === 0 ? Number(n).toLocaleString('ru-RU') : fmt(n));
 
   function itemRow(it) {
     const r = el('div', 'row');
+    if (canEdit()) {
+      r.classList.add('tap'); r.setAttribute('role', 'button'); r.tabIndex = 0;
+      r.setAttribute('aria-label', 'Изменить: ' + (it.comment || it.category) + ', ' + fmt(it.amount));
+      r.addEventListener('click', () => openSheet(it));
+      r.addEventListener('keydown', e => { if (e.key === 'Enter') openSheet(it); });
+    }
     r.appendChild(el('div', 'ico', icon(it.category)));
     const t = el('div', 't');
     t.appendChild(el('div', '', it.comment || it.category));
@@ -415,14 +509,17 @@
       const b = el('button', 'cat' + (c === selected ? ' on' : ''));
       b.type = 'button'; b.setAttribute('role', 'radio'); b.setAttribute('aria-checked', c === selected);
       b.appendChild(el('i', '', icon(c))); b.appendChild(el('small', '', c));
-      b.addEventListener('click', () => {
-        selected = c;
-        g.querySelectorAll('.cat').forEach(x => { x.classList.toggle('on', x === b); x.setAttribute('aria-checked', x === b); });
-        try { tg.HapticFeedback.selectionChanged(); } catch (e) {}
-        validate();
-      });
+      b.dataset.c = c;
+      b.addEventListener('click', () => { selectCat(c); try { tg.HapticFeedback.selectionChanged(); } catch (e) {} });
       g.appendChild(b);
     });
+  }
+
+  function selectCat(c) {
+    if (state.cats.indexOf(c) === -1) c = null;
+    selected = c;
+    $('cats').querySelectorAll('.cat').forEach(x => { const on = x.dataset.c === c; x.classList.toggle('on', on); x.setAttribute('aria-checked', on); });
+    validate();
   }
 
   const parseAmount = () => Number($('amount').value.trim().replace(/\s/g, '').replace(',', '.'));
@@ -430,42 +527,79 @@
   $('amount').addEventListener('input', validate);
   $('date').addEventListener('change', () => { $('more-date').textContent = $('date').value ? cap(dayName($('date').value)) : 'Сегодня'; });
 
-  function openSheet() {
-    $('amount').value = ''; $('comment').value = ''; $('date').value = todayIso();
-    $('more-date').textContent = 'Сегодня'; $('more').open = false;
+  let lastSelected = selected;
+  function openSheet(item) {
+    state.edit = item && item.row ? item : null;
+    const e = state.edit;
+    $('sheet-title').textContent = e ? 'Изменить трату' : 'Новая трата';
+    $('send').textContent = e ? 'Сохранить' : 'Записать';
+    $('del').classList.toggle('hidden', !e); $('del').textContent = 'Удалить трату'; delArmed = false;
+    $('amount').value = e ? fmt(e.amount) : '';
+    $('comment').value = e ? e.comment : '';
+    $('date').value = e ? e.date : todayIso();
+    $('more-date').textContent = $('date').value === todayIso() ? 'Сегодня' : cap(dayName($('date').value));
+    $('more').open = !!(e && (e.comment || e.date !== todayIso()));
+    if (e) { lastSelected = selected; selectCat(e.category); } else selectCat(lastSelected);
     validate();
     $('sheet').classList.add('open'); $('sheet').setAttribute('aria-hidden', 'false');
     try { tg.BackButton.show(); } catch (e) {}
-    setTimeout(() => $('amount').focus(), 280);
+    if (!e) setTimeout(() => $('amount').focus(), 280);
   }
   function closeSheet() {
     $('sheet').classList.remove('open'); $('sheet').setAttribute('aria-hidden', 'true');
     try { tg.BackButton.hide(); } catch (e) {}
   }
-  $('plus').addEventListener('click', openSheet);
+  $('plus').addEventListener('click', () => openSheet(null));
   $('add-close').addEventListener('click', closeSheet);
   try { tg.BackButton.onClick(closeSheet); } catch (e) {}
 
   $('send').addEventListener('click', async () => {
     const btn = $('send');
-    btn.disabled = true; btn.textContent = 'Записываю…';
+    const e = state.edit;
+    btn.disabled = true; btn.textContent = e ? 'Сохраняю…' : 'Записываю…';
+    const payload = { action: e ? 'update' : 'add', amount: $('amount').value.trim(), category: selected,
+      comment: $('comment').value, date: $('date').value };
+    if (e) { payload.row = e.row; payload.orig = { date: e.date, amount: e.amount, category: e.category, comment: e.comment }; }
     try {
-      const data = await call({ action: 'add', amount: $('amount').value.trim(), category: selected,
-        comment: $('comment').value, date: $('date').value });
+      const data = await call(payload);
       if (data.ok) {
-        try { localStorage.setItem('lastCat', selected); } catch (e) {}
-        haptic('success'); closeSheet(); toast('Записано');
-        state.stale.sum = true; state.stale.hist = true;
-        loadHome();
-      } else { haptic('error'); toast(errText(data.error)); }
-    } catch (e) { haptic('error'); toast('Не удалось отправить. Проверь интернет.'); }
-    btn.textContent = 'Записать'; validate();
+        if (!e) { lastSelected = selected; try { localStorage.setItem('lastCat', selected); } catch (x) {} }
+        else selected = lastSelected;
+        haptic('success'); closeSheet(); toast(e ? 'Сохранено' : 'Записано');
+        afterChange();
+      } else { haptic('error'); toast(errText(data.error)); if (data.error === 'stale') { closeSheet(); afterChange(); } }
+    } catch (x) { haptic('error'); toast('Не удалось отправить. Проверь интернет.'); }
+    btn.textContent = state.edit ? 'Сохранить' : 'Записать'; validate();
   });
 
+  // Удаление: первое нажатие спрашивает, второе удаляет
+  let delArmed = false;
+  $('del').addEventListener('click', async () => {
+    const e = state.edit; if (!e) return;
+    if (!delArmed) { delArmed = true; $('del').textContent = 'Нажми ещё раз, чтобы удалить'; return; }
+    $('del').textContent = 'Удаляю…';
+    try {
+      const data = await call({ action: 'delete', row: e.row, orig: { date: e.date, amount: e.amount, category: e.category, comment: e.comment } });
+      if (data.ok) { haptic('success'); toast('Удалено'); }
+      else { haptic('error'); toast(errText(data.error)); }
+    } catch (x) { toast('Не удалось удалить. Проверь интернет.'); }
+    selected = lastSelected; closeSheet(); afterChange();
+  });
+
+  // После любого изменения обновляем главную, а открытую вкладку перерисовываем
+  function afterChange() {
+    state.stale.sum = true; state.stale.hist = true;
+    loadHome().then(() => {
+      if (!$('v-hist').classList.contains('hidden')) renderHistory();
+      if (!$('v-sum').classList.contains('hidden')) loadSummary();
+      if (!$('v-set').classList.contains('hidden')) renderSettings();
+    });
+  }
+
   // ---------- Итоги ----------
-  document.querySelectorAll('.seg button').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('#v-sum .seg button').forEach(b => b.addEventListener('click', () => {
     state.period = b.dataset.p;
-    document.querySelectorAll('.seg button').forEach(x => x.classList.toggle('on', x === b));
+    document.querySelectorAll('#v-sum .seg button').forEach(x => x.classList.toggle('on', x === b));
     renderSummary();
   }));
 
@@ -494,11 +628,28 @@
     const stops = keys.map(c => { const a = acc; acc += obj[c] / t * 100; return colorOf(c) + ' ' + a.toFixed(2) + '% ' + acc.toFixed(2) + '%'; });
     $('s-donut').style.background = keys.length ? 'conic-gradient(' + stops.join(',') + ')' : '';
     const list = $('s-list'); list.textContent = '';
+    // Категории с лимитом показываем всегда, даже если трат по ним ещё нет
+    const lim = (state.summary.limits || {})[state.period] || {};
+    Object.keys(lim).forEach(c => { if (keys.indexOf(c) === -1) keys.push(c); });
     if (!keys.length) { list.appendChild(el('div', 'empty', state.period === 'week' ? 'На этой неделе трат нет.' : 'В этом месяце трат нет.')); return; }
+    const pname = state.period === 'week' ? 'на неделю' : 'на месяц';
     keys.forEach(c => {
-      const r = el('div', 'cl'); const l = el('span');
+      const spent = Number(obj[c]) || 0, limit = lim[c];
+      const box = el('div', 'cl-box'), r = el('div', 'cl'), l = el('span');
       const d = el('i', 'dot'); d.style.background = colorOf(c);
-      l.append(d, c); r.append(l, el('span', 'num', fmt(obj[c]))); list.appendChild(r);
+      l.append(d, c);
+      const v = el('span', 'num', fmt(spent));
+      if (limit) v.appendChild(el('span', 'lim-of', ' / ' + fmtLimit(limit)));
+      r.append(l, v); box.appendChild(r);
+      if (limit) {
+        r.style.borderBottom = '0'; r.style.paddingBottom = '0';
+        const pct = Math.round(spent / limit * 100);
+        const bar = el('div', 'bar'), i = el('i', pct > 100 ? 'over' : pct >= 80 ? 'warn' : '');
+        i.style.width = Math.min(pct, 100) + '%'; bar.appendChild(i); box.appendChild(bar);
+        if (pct > 100) box.appendChild(el('div', 'note over', 'Лимит ' + pname + ' превышен на ' + fmt(spent - limit)));
+        else if (pct >= 80) box.appendChild(el('div', 'note', 'Использовано ' + pct + '% лимита ' + pname));
+      }
+      list.appendChild(box);
     });
   }
 
@@ -563,6 +714,81 @@
       box.appendChild(itemRow(it));
     });
   }
+
+  // ---------- Бюджет и лимиты ----------
+  async function refreshSummary() {
+    const sum = await call({ action: 'summary' });
+    if (sum && sum.ok) { state.summary = sum; state.stale.sum = false; renderHome(); renderSettings(); }
+    return sum;
+  }
+
+  function renderSettings() {
+    if (!canEdit()) return;
+    if (!state.summary) { refreshSummary(); return; }
+    if (document.activeElement !== $('budget')) $('budget').value = state.summary.budget ? String(state.summary.budget).replace('.', ',') : '';
+    const lim = state.summary.limits || { week: {}, month: {} };
+    const box = $('lim-list'); box.textContent = '';
+    const rows = [];
+    state.cats.forEach(c => ['week', 'month'].forEach(p => { if (lim[p] && lim[p][c]) rows.push({ c, p, v: lim[p][c] }); }));
+    if (!rows.length) box.appendChild(el('p', 'muted small', 'Лимитов пока нет.'));
+    rows.forEach(x => {
+      const r = el('div', 'lrow');
+      r.appendChild(el('div', 'ico', icon(x.c)));
+      const t = el('div', 't tap');
+      t.appendChild(el('div', '', x.c));
+      t.appendChild(el('small', 'muted', (x.p === 'week' ? 'на неделю' : 'на месяц')));
+      t.addEventListener('click', () => openLimitForm(x.c, x.p, x.v));
+      r.appendChild(t);
+      r.appendChild(el('span', 'num', fmtLimit(x.v)));
+      const del = el('button', 'x', '×'); del.setAttribute('aria-label', 'Убрать лимит');
+      del.addEventListener('click', async () => {
+        del.disabled = true;
+        const res = await call({ action: 'setLimit', period: x.p, category: x.c, amount: '' }).catch(() => null);
+        if (res && res.ok) { toast('Лимит убран'); await refreshSummary(); state.stale.sum = true; }
+        else { toast(res ? errText(res.error) : 'Не удалось. Проверь интернет.'); del.disabled = false; }
+      });
+      r.appendChild(del);
+      box.appendChild(r);
+    });
+  }
+
+  $('budget-save').addEventListener('click', async () => {
+    const v = $('budget').value.trim();
+    const n = v === '' ? 0 : Number(v.replace(/\s/g, '').replace(',', '.'));
+    if (!(n >= 0)) { toast('Проверь сумму бюджета.'); return; }
+    const btn = $('budget-save'); btn.disabled = true;
+    try {
+      const res = await call({ action: 'setBudget', amount: v });
+      if (res.ok) { haptic('success'); toast(n > 0 ? 'Бюджет сохранён' : 'Бюджет убран'); $('budget').blur(); await refreshSummary(); }
+      else toast(errText(res.error));
+    } catch (e) { toast('Не удалось сохранить. Проверь интернет.'); }
+    btn.disabled = false;
+  });
+
+  let limPeriod = 'week';
+  function setLimPeriod(p) { limPeriod = p; document.querySelectorAll('#lim-period button').forEach(b => b.classList.toggle('on', b.dataset.p === p)); }
+  document.querySelectorAll('#lim-period button').forEach(b => b.addEventListener('click', () => setLimPeriod(b.dataset.p)));
+  function openLimitForm(c, p, v) {
+    $('lim-form').classList.remove('hidden'); $('lim-add').classList.add('hidden');
+    if (c) $('lim-cat').value = c;
+    setLimPeriod(p || 'week');
+    $('lim-amount').value = v ? String(v).replace('.', ',') : '';
+    $('lim-amount').focus();
+  }
+  function closeLimitForm() { $('lim-form').classList.add('hidden'); $('lim-add').classList.remove('hidden'); }
+  $('lim-add').addEventListener('click', () => openLimitForm(null, 'week', null));
+  $('lim-cancel').addEventListener('click', closeLimitForm);
+  $('lim-save').addEventListener('click', async () => {
+    const v = $('lim-amount').value.trim(), n = Number(v.replace(/\s/g, '').replace(',', '.'));
+    if (!(n > 0)) { toast('Введи сумму лимита.'); return; }
+    const btn = $('lim-save'); btn.disabled = true;
+    try {
+      const res = await call({ action: 'setLimit', period: limPeriod, category: $('lim-cat').value, amount: v });
+      if (res.ok) { haptic('success'); toast('Лимит сохранён'); closeLimitForm(); await refreshSummary(); }
+      else toast(errText(res.error));
+    } catch (e) { toast('Не удалось сохранить. Проверь интернет.'); }
+    btn.disabled = false;
+  });
 
   // ---------- Регистрация ----------
   $('reg-send').addEventListener('click', async () => {

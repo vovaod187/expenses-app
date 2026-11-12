@@ -127,7 +127,7 @@ function ensureSheets_(ss) {
   let tr = ss.getSheetByName('Траты');
   if (!tr) {
     tr = ss.insertSheet('Траты');
-    tr.appendRow(['Дата', 'Сумма', 'Категория', 'Комментарий']);
+    tr.appendRow(['Дата', 'Сумма', 'Категория', 'Комментарий', 'Кто']);
     tr.getRange('A:A').setNumberFormat('dd.MM.yyyy');
   }
   let arc = ss.getSheetByName('Архив');
@@ -154,7 +154,7 @@ function createUserSheet_(name) {
   const ss = SpreadsheetApp.create('Траты - ' + String(name).slice(0, 60));
   const first = ss.getSheets()[0];
   first.setName('Траты');
-  first.appendRow(['Дата', 'Сумма', 'Категория', 'Комментарий']);
+  first.appendRow(['Дата', 'Сумма', 'Категория', 'Комментарий', 'Кто']);
   first.getRange('A:A').setNumberFormat('dd.MM.yyyy');
   ensureSheets_(ss); // добавит «Архив»
   DriveApp.getFileById(ss.getId()).moveTo(usersFolder_());
@@ -201,7 +201,10 @@ function doPost(e) {
         disabled: !!user && user.status !== 'active',
         isAdmin: isOwner_(tgUser.id),
         name: user ? user.name : '',
-        categories: ALLOWED
+        categories: ALLOWED,
+        // Версия сервера: приложение включает новые функции, только если сервер их знает
+        // (старый сервер принял бы незнакомое действие за запись новой траты)
+        version: 2
       });
     }
     if (action === 'register') return out_(register_(tgUser, body));
@@ -227,7 +230,11 @@ function doPost(e) {
     if (action === 'summary') return out_(summary_(ss));
     if (action === 'archive') return out_(archiveList_(ss));
     if (action === 'history') return out_(history_(ss));
-    return out_(add_(ss, body));
+    if (action === 'update') return out_(update_(ss, body, user));
+    if (action === 'delete') return out_(delete_(ss, body));
+    if (action === 'setLimit') return out_(setLimit_(ss, body));
+    if (action === 'setBudget') return out_(setBudget_(ss, body));
+    return out_(add_(ss, body, user));
   } catch (err) {
     console.error(err && err.message ? err.message : 'server error');
     return out_({ ok: false, error: 'server error' });
@@ -336,28 +343,208 @@ function setUserStatus_(body) {
 // ---------------------------------------------------------------------
 // Работа с тратами (всё принимает таблицу пользователя ss)
 // ---------------------------------------------------------------------
-function add_(ss, body) {
-  const amount = Number(String(body.amount).replace(',', '.'));
+// Разбор и проверка траты из запроса. Возвращает null, если данные неверные
+function parseExpense_(body) {
+  const amount = Number(String(body.amount).replace(/\s/g, '').replace(',', '.'));
   // Старое название (например, из закэшированного приложения) сохраняем под новым
-  body.category = canon_(body.category);
-  if (!(amount > 0) || ALLOWED.indexOf(body.category) === -1) {
-    return { ok: false, error: 'bad data' };
-  }
+  const category = canon_(body.category);
+  if (!(amount > 0) || amount > 1e8 || ALLOWED.indexOf(category) === -1) return null;
   let date = new Date();
   if (body.date) {
     const p = String(body.date).split('-');
     date = new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]));
+    if (isNaN(date.getTime())) return null;
   }
   const comment = String(body.comment || '').slice(0, 200).replace(/^[=+\-@]/, "'$&");
+  return { date: date, amount: Math.round(amount * 100) / 100, category: category, comment: comment };
+}
+
+function add_(ss, body, user) {
+  const e = parseExpense_(body);
+  if (!e) return { ok: false, error: 'bad data' };
   ensureSheets_(ss);
+  const sh = ss.getSheetByName('Траты');
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    ss.getSheetByName('Траты').appendRow([date, amount, body.category, comment]);
+    sh.appendRow([e.date, e.amount, e.category, e.comment, user ? user.name : '']);
+    if (sh.getRange(1, 5).getValue() === '') sh.getRange(1, 5).setValue('Кто'); // старые таблицы
+  } finally {
+    lock.releaseLock();
+  }
+  checkLimits_(ss, e.category, user);
+  return { ok: true };
+}
+
+// Находит строку траты и сверяет, что это та же запись, что видел пользователь.
+// Если таблицу меняли (например, удалили строку выше), возвращает 0
+function findExpenseRow_(sh, body) {
+  const row = Number(body.row);
+  const o = body.orig || {};
+  if (!(row >= 2) || row > sh.getLastRow()) return 0;
+  const r = sh.getRange(row, 1, 1, 4).getValues()[0];
+  const same = r[0] instanceof Date &&
+    Utilities.formatDate(r[0], Session.getScriptTimeZone(), 'yyyy-MM-dd') === String(o.date) &&
+    Math.abs(Number(r[1]) - Number(o.amount)) < 0.005 &&
+    canon_(r[2]) === String(o.category) &&
+    String(r[3] || '') === String(o.comment || '');
+  return same ? row : 0;
+}
+
+function update_(ss, body, user) {
+  const e = parseExpense_(body);
+  if (!e) return { ok: false, error: 'bad data' };
+  const sh = ss.getSheetByName('Траты');
+  if (!sh) return { ok: false, error: 'stale' };
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const row = findExpenseRow_(sh, body);
+    if (!row) return { ok: false, error: 'stale' };
+    sh.getRange(row, 1, 1, 4).setValues([[e.date, e.amount, e.category, e.comment]]);
+  } finally {
+    lock.releaseLock();
+  }
+  checkLimits_(ss, e.category, user);
+  return { ok: true };
+}
+
+function delete_(ss, body) {
+  const sh = ss.getSheetByName('Траты');
+  if (!sh) return { ok: false, error: 'stale' };
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const row = findExpenseRow_(sh, body);
+    if (!row) return { ok: false, error: 'stale' };
+    sh.deleteRow(row);
   } finally {
     lock.releaseLock();
   }
   return { ok: true };
+}
+
+// ---------------------------------------------------------------------
+// Настройки пользователя: лист «Настройки» в его таблице (Ключ | Значение)
+//   budget:month            - бюджет на месяц
+//   limit:week:<категория>  - лимит на неделю
+//   limit:month:<категория> - лимит на месяц
+//   notified:<период>:<ключ периода>:<категория> - уведомление о 80% уже отправлено
+// ---------------------------------------------------------------------
+function settingsSheet_(ss) {
+  let sh = ss.getSheetByName('Настройки');
+  if (!sh) {
+    sh = ss.insertSheet('Настройки');
+    sh.getRange('A:A').setNumberFormat('@');
+    sh.appendRow(['Ключ', 'Значение']);
+  }
+  return sh;
+}
+
+function getSettings_(ss) {
+  const sh = ss.getSheetByName('Настройки');
+  const res = {};
+  if (!sh) return res;
+  sh.getDataRange().getValues().slice(1).forEach(function (r) {
+    if (r[0] !== '') res[String(r[0])] = r[1];
+  });
+  return res;
+}
+
+// value === null удаляет настройку
+function setSetting_(ss, key, value) {
+  const sh = settingsSheet_(ss);
+  const rows = sh.getDataRange().getValues();
+  for (let i = rows.length - 1; i >= 1; i--) {
+    if (String(rows[i][0]) === key) {
+      if (value === null) sh.deleteRow(i + 1);
+      else sh.getRange(i + 1, 2).setValue(value);
+      return;
+    }
+  }
+  if (value !== null) sh.appendRow([key, value]);
+}
+
+function limitsFrom_(settings) {
+  const res = { week: {}, month: {} };
+  Object.keys(settings).forEach(function (k) {
+    const m = k.match(/^limit:(week|month):(.+)$/);
+    if (m && ALLOWED.indexOf(m[2]) !== -1 && Number(settings[k]) > 0) res[m[1]][m[2]] = Number(settings[k]);
+  });
+  return res;
+}
+
+function parseMoney_(v) {
+  if (v === null || v === undefined || String(v).trim() === '') return 0;
+  const n = Number(String(v).replace(/\s/g, '').replace(',', '.'));
+  return n >= 0 && n <= 1e8 ? Math.round(n * 100) / 100 : NaN;
+}
+
+function setLimit_(ss, body) {
+  const period = body.period === 'week' ? 'week' : body.period === 'month' ? 'month' : '';
+  const category = canon_(body.category);
+  const amount = parseMoney_(body.amount);
+  if (!period || ALLOWED.indexOf(category) === -1 || isNaN(amount)) return { ok: false, error: 'bad data' };
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    setSetting_(ss, 'limit:' + period + ':' + category, amount > 0 ? amount : null);
+  } finally {
+    lock.releaseLock();
+  }
+  return { ok: true };
+}
+
+function setBudget_(ss, body) {
+  const amount = parseMoney_(body.amount);
+  if (isNaN(amount)) return { ok: false, error: 'bad data' };
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    setSetting_(ss, 'budget:month', amount > 0 ? amount : null);
+  } finally {
+    lock.releaseLock();
+  }
+  return { ok: true };
+}
+
+// Все активные пользователи, которые ведут траты в этой таблице (для общего бюджета их двое)
+function sheetMembers_(ss) {
+  const id = ss.getId();
+  return allUsers_().filter(function (u) { return u.status === 'active' && u.sheetId === id; });
+}
+
+// После записи: если по категории потрачено 80% лимита, один раз за период пишем в Telegram
+function checkLimits_(ss, category, user) {
+  try {
+    const settings = getSettings_(ss);
+    const limits = limitsFrom_(settings);
+    const now = new Date();
+    const tz = Session.getScriptTimeZone();
+    const ws = weekStart_(now);
+    const periods = [
+      { p: 'week', key: Utilities.formatDate(ws, tz, 'yyyy-MM-dd'), from: ws,
+        to: new Date(ws.getFullYear(), ws.getMonth(), ws.getDate() + 7), name: 'неделю' },
+      { p: 'month', key: Utilities.formatDate(now, tz, 'yyyy-MM'), from: new Date(now.getFullYear(), now.getMonth(), 1),
+        to: new Date(now.getFullYear(), now.getMonth() + 1, 1), name: 'месяц' }
+    ];
+    periods.forEach(function (x) {
+      const limit = limits[x.p][category];
+      if (!limit) return;
+      const flag = 'notified:' + x.p + ':' + x.key + ':' + category;
+      if (settings[flag]) return;
+      const spent = sumByCategory_(ss, x.from, x.to)[category];
+      if (spent < limit * 0.8) return;
+      setSetting_(ss, flag, new Date());
+      const text = category + ': потрачено ' + fmt_(spent) + ' из ' + fmt_(limit) + ' BYN за ' + x.name +
+        ' (' + Math.round(spent / limit * 100) + '% лимита).';
+      const ids = user ? [user.id] : [];
+      sheetMembers_(ss).forEach(function (u) { if (ids.indexOf(u.id) === -1) ids.push(u.id); });
+      ids.forEach(function (id) { sendMessage_(id, text); });
+    });
+  } catch (err) {
+    console.error('Проверка лимитов: ' + (err && err.message ? err.message : 'unknown'));
+  }
 }
 
 // Сумма по категориям за период: от from (включительно) до to (не включая)
@@ -385,10 +572,15 @@ function summary_(ss) {
   const now = new Date();
   const ws = weekStart_(now);
   const ms = new Date(now.getFullYear(), now.getMonth(), 1);
+  const ds = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const settings = getSettings_(ss);
   return {
     ok: true,
     week: sumByCategory_(ss, ws, new Date(ws.getFullYear(), ws.getMonth(), ws.getDate() + 7)),
-    month: sumByCategory_(ss, ms, new Date(now.getFullYear(), now.getMonth() + 1, 1))
+    month: sumByCategory_(ss, ms, new Date(now.getFullYear(), now.getMonth() + 1, 1)),
+    today: total_(sumByCategory_(ss, ds, new Date(ds.getFullYear(), ds.getMonth(), ds.getDate() + 1))),
+    budget: Number(settings['budget:month']) > 0 ? Number(settings['budget:month']) : 0,
+    limits: limitsFrom_(settings)
   };
 }
 
@@ -417,7 +609,8 @@ function history_(ss) {
       date: Utilities.formatDate(d, tz, 'yyyy-MM-dd'),
       amount: a,
       category: canon_(rows[i][2]),
-      comment: String(rows[i][3] || '')
+      comment: String(rows[i][3] || ''),
+      who: String(rows[i][4] || '')
     });
   }
   items.sort(function (x, y) {
