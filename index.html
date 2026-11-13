@@ -104,6 +104,66 @@
   .story .actions { position: absolute; left: 24px; right: 24px; bottom: calc(30px + env(safe-area-inset-bottom, 0px)); display: flex; gap: 10px; z-index: 3; max-width: 472px; margin: 0 auto; }
   .story .actions button { flex: 1; height: 52px; border-radius: 16px; font-weight: 600; }
   .story .tap-hint { position: absolute; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); left: 0; right: 0; text-align: center; color: rgba(255,255,255,.45); font-size: 13px; }
+  /* Знакомство (брошюра) */
+  .onb { position: fixed; inset: 0; z-index: 45; color: var(--text); overflow: hidden;
+    background: radial-gradient(120% 70% at 50% 0%, #3B2A7A 0%, #1A1430 55%, #120F1C 100%); }
+  .onb .dots { position: absolute; top: calc(22px + env(safe-area-inset-top, 0px)); left: 0; right: 0; display: flex; justify-content: center; gap: 6px; }
+  .onb .dots i { width: 6px; height: 6px; border-radius: 3px; background: rgba(255,255,255,.25); transition: width .2s; }
+  .onb .dots i.on { width: 20px; background: #fff; }
+  .onb .skip { position: absolute; top: calc(12px + env(safe-area-inset-top, 0px)); right: 20px; color: var(--muted); font-size: 15px; padding: 6px 0; z-index: 2; }
+  .onb .page { position: absolute; inset: 0; max-width: 480px; margin: 0 auto; animation: slideIn .35s ease; }
+  .onb .art { position: absolute; top: 9vh; left: 0; right: 0; height: 42vh; display: grid; place-items: center; }
+  .onb .txt { position: absolute; top: 53vh; left: 28px; right: 28px; }
+  .onb .txt h1 { font-family: var(--num); font-weight: 500; font-size: 32px; line-height: 1.12; margin: 0 0 12px; }
+  .onb .txt p { margin: 0 0 10px; font-size: 16px; line-height: 1.5; color: #CFC8E0; }
+  .onb .go { position: absolute; left: 24px; right: 24px; width: auto; bottom: calc(28px + env(safe-area-inset-bottom, 0px)); max-width: 432px; margin: 0 auto; }
+  .o-ring { width: 200px; height: 200px; border-radius: 50%; position: relative; background: conic-gradient(var(--accent) 0 68%, rgba(183,162,255,.14) 0); box-shadow: 0 0 60px rgba(140,107,255,.45); }
+  .o-ring::after { content: ""; position: absolute; inset: 14px; border-radius: 50%; background: #1A1430; }
+  .o-ring .c { position: absolute; inset: 0; z-index: 1; display: grid; place-content: center; text-align: center; }
+  .o-ring .c small { color: var(--muted); font-size: 12px; }
+  .o-ring .c b { font-family: var(--num); font-weight: 500; font-size: 36px; }
+  .o-orbit { position: absolute; width: 250px; height: 250px; border-radius: 50%; border: 1px dashed rgba(183,162,255,.25); }
+  .o-add { display: grid; justify-items: center; gap: 14px; }
+  .o-add .amt { font-family: var(--num); font-size: 54px; font-weight: 500; }
+  .o-chips { display: flex; gap: 6px; }
+  .o-chips span { font-size: 12px; padding: 5px 10px; border-radius: 999px; background: var(--surface); color: var(--muted); }
+  .o-chips span.on { background: var(--accent); color: #fff; font-weight: 600; }
+  .o-tiles { display: grid; grid-template-columns: repeat(4, 64px); gap: 8px; }
+  .o-tile { background: var(--surface); border-radius: 14px; padding: 10px 0 8px; text-align: center; font-size: 22px; border: 1.5px solid transparent; }
+  .o-tile small { display: block; font-size: 9.5px; color: var(--muted); margin-top: 4px; }
+  .o-tile.on { border-color: var(--accent); background: #2A2245; }
+  .o-donut { width: 170px; height: 170px; border-radius: 50%; position: relative; margin: 0 auto;
+    background: conic-gradient(#8C6BFF 0 34%, #57D2C8 0 60%, #5B8CFF 0 74%, #F5B76A 0 85%, #F08BD6 0 100%); }
+  .o-donut::after { content: ""; position: absolute; inset: 24px; border-radius: 50%; background: #1A1430; }
+  .o-rows { width: 250px; margin-top: 18px; }
+  .o-r { display: flex; justify-content: space-between; font-size: 13px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+  .o-r i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 8px; }
+  .o-card { width: 280px; background: rgba(28,24,41,.9); border-radius: 22px; padding: 18px; box-shadow: inset 0 0 0 1px rgba(183,162,255,.15); }
+  .o-card .k { font-size: 13px; color: var(--muted); }
+  .o-card .v { font-family: var(--num); font-size: 36px; font-weight: 500; margin: 2px 0 12px; }
+  .o-card .l1 { display: flex; justify-content: space-between; font-size: 13px; margin-top: 10px; }
+  .o-duo { display: grid; justify-items: center; gap: 16px; }
+  .o-avs { display: flex; }
+  .o-av { width: 70px; height: 70px; border-radius: 50%; display: grid; place-items: center; font-size: 28px; font-weight: 600; border: 3px solid #1A1430; }
+  .o-av + .o-av { margin-left: -16px; }
+  .o-msg { width: 270px; background: #2A2245; border-radius: 18px 18px 18px 6px; padding: 12px 14px; font-size: 13.5px; line-height: 1.45; }
+  .o-msg small { display: block; color: var(--accent-soft); font-size: 12px; margin-bottom: 3px; }
+  @media (max-height: 640px) { .onb .art { top: 6vh; height: 38vh; transform: scale(.85); } .onb .txt { top: 46vh; } .onb .txt h1 { font-size: 26px; } }
+
+  /* Руководство */
+  .guide { position: fixed; inset: 0; z-index: 35; background: var(--bg); overflow-y: auto; }
+  details.faq { border-bottom: 1px solid var(--line); }
+  details.faq summary { list-style: none; padding: 15px 0; font-weight: 500; display: flex; justify-content: space-between; gap: 12px; cursor: pointer; }
+  details.faq summary::-webkit-details-marker { display: none; }
+  details.faq summary::after { content: "+"; color: var(--muted); font-size: 20px; line-height: 1; }
+  details.faq[open] summary::after { content: "–"; }
+  details.faq p { margin: 0 0 14px; color: #CFC8E0; line-height: 1.5; }
+  .about p { color: #CFC8E0; line-height: 1.5; }
+  .about p.small { color: var(--muted); }
+  .about a { color: var(--accent-soft); text-decoration: none; }
+  .end-links { display: flex; flex-direction: column; align-items: center; gap: 4px; margin-top: 22px; }
+  .end-links .link { color: var(--accent-soft); }
+  .end-links .danger-link { margin: 0; padding: 8px; font-size: 14px; color: #B9837B; }
   .danger-link { display: block; margin: 22px auto 0; color: var(--danger); font-size: 15px; padding: 10px; }
   .big { font-size: 46px; line-height: 1.1; margin: 4px 0 0; }
   .hero-sub { position: relative; margin-top: 12px; color: var(--muted); }
@@ -350,6 +410,24 @@
         <div id="adm-users" style="margin-top:8px"></div>
       </div>
     </div>
+    <h2>Как всё устроено</h2>
+    <div class="card about">
+      <p>Приложение работает внутри Telegram. Траты обрабатывает скрипт Google Apps Script, а хранятся они в Google Таблицах: у каждого пользователя своя таблица, в общем бюджете одна на двоих. Курсы валют — официальные курсы Национального банка Республики Беларусь, получаемые через сервис Frankfurter.</p>
+      <p>Из Telegram приложение получает только имя, ник и ID. Телефон, пароли и банковские данные не запрашиваются.</p>
+      <p class="small">Таблицы хранятся на Google Диске владельца приложения, другие пользователи доступа к ним не имеют. Технически владелец имеет доступ к таблицам пользователей. Данные используются только для работы приложения и не передаются третьим лицам.</p>
+      <p class="small">Вопросы и предложения: <a href="https://t.me/vovavov11" id="contact">@vovavov11</a></p>
+    </div>
+    <div class="end-links">
+      <button class="link" id="guide-open">Как пользоваться</button>
+      <button class="danger-link hidden" id="wipe-open">Удалить мои данные</button>
+    </div>
+    <div class="card hidden" id="wipe-box">
+      <p id="wipe-text"></p>
+      <div class="inrow" style="margin-top:12px">
+        <button class="btn2" id="wipe-cancel">Отмена</button>
+        <button class="cta" id="wipe-go" style="height:48px;border-radius:14px;background:var(--danger);color:#2A0F0B">Удалить навсегда</button>
+      </div>
+    </div>
   </section>
 
   <!-- Новая трата -->
@@ -396,6 +474,23 @@
     </div>
   </div>
 
+  <!-- Знакомство -->
+  <div class="onb hidden" id="onb" role="dialog" aria-label="Знакомство с приложением">
+    <div class="dots" id="onb-dots"></div>
+    <button class="skip" id="onb-skip">Пропустить</button>
+    <div id="onb-page"></div>
+    <button class="cta go" id="onb-next">Далее</button>
+  </div>
+
+  <!-- Руководство -->
+  <div class="guide hidden" id="guide" role="dialog" aria-label="Как пользоваться">
+    <div class="view">
+      <div class="top"><h1 class="title">Как пользоваться</h1><button class="link" id="guide-close">Закрыть</button></div>
+      <div id="guide-list"></div>
+      <button class="btn2" id="guide-tour" style="margin-top:22px">Показать знакомство ещё раз</button>
+    </div>
+  </div>
+
   <div class="toast" id="toast" role="status"></div>
 
 <script>
@@ -433,6 +528,7 @@
     'bad data': 'Проверь сумму и категорию.',
     'server error': 'Ошибка на сервере. Попробуй ещё раз.',
     stale: 'Запись успела измениться. Список обновлён, попробуй ещё раз.',
+    cannot_delete_owner: 'Данные владельца удалить нельзя.',
     rate_unavailable: 'Не удалось получить курс Нацбанка. Попробуй чуть позже или запиши в BYN.'
   };
   const errText = e => ERRORS[e] || ('Ошибка: ' + e);
@@ -522,6 +618,8 @@
       $('year-open-t').textContent = 'Мой ' + ry + ' год';
       $('year-banner').classList.toggle('hidden', !(canYear() && ((nd.getMonth() === 11 && nd.getDate() >= 20) || (nd.getMonth() === 0 && nd.getDate() <= 15))));
       $('year-banner-t').textContent = 'Твой ' + ry + ' год в тратах';
+      $('wipe-open').classList.toggle('hidden', !canOnb() || !!me.isAdmin);
+      $('wipe-box').classList.add('hidden');
       $('remind').setAttribute('aria-checked', me.reminder !== false);
       $('lim-cat').textContent = '';
       state.cats.forEach(c => { const o = el('option', '', icon(c) + ' ' + c); o.value = c; $('lim-cat').appendChild(o); });
@@ -531,6 +629,7 @@
       $('nav').classList.remove('hidden');
       show('home');
       loadHome();
+      maybeOnboard();
     } catch (e) {
       $('loading').textContent = 'Не удалось загрузить. Проверь интернет и открой приложение заново.';
     }
@@ -993,6 +1092,138 @@
       else toast(errText(res.error));
     } catch (e) { toast('Не удалось сохранить. Проверь интернет.'); }
     btn.disabled = false;
+  });
+
+  // ---------- Знакомство (брошюра при первом входе) ----------
+  const canOnb = () => !!(state.me && state.me.version >= 7);
+  const ONB = [
+    { art: '<div class="o-orbit"></div><div class="o-ring"><div class="c"><small>Потрачено за месяц</small><b>742,50</b><small>BYN</small></div></div>',
+      h: 'Учёт трат прямо в Telegram',
+      p: ['Записывай расходы за пару секунд и смотри, куда уходят деньги. Ничего не нужно устанавливать.',
+          'У каждого своя отдельная Google-таблица, другие пользователи твои траты не видят.'] },
+    { art: '<div class="o-add"><div class="amt">12,40</div><div class="o-chips"><span>BYN</span><span>USD</span><span class="on">EUR</span><span>PLN</span><span>AMD</span></div>' +
+        '<div class="o-tiles"><div class="o-tile">🛒<small>Продукты</small></div><div class="o-tile on">🍜<small>Кафе</small></div><div class="o-tile">🚕<small>Транспорт</small></div><div class="o-tile">🏠<small>Жилье</small></div></div></div>',
+      h: 'Запись в три касания',
+      p: ['Нажми «+» внизу, введи сумму и выбери категорию. Комментарий и дату можно добавить, если нужно.',
+          'В поездке выбирай валюту: сумма сама пересчитается в рубли по курсу Нацбанка.'] },
+    { art: '<div><div class="o-donut"></div><div class="o-rows"><div class="o-r"><span><i style="background:#8C6BFF"></i>Продукты</span><b>214,30</b></div>' +
+        '<div class="o-r"><span><i style="background:#57D2C8"></i>Жилье</span><b>186,00</b></div><div class="o-r"><span><i style="background:#5B8CFF"></i>Кафе и доставка</span><b>120,00</b></div></div></div>',
+      h: 'Видно, куда уходят деньги',
+      p: ['В «Итогах» — диаграмма по категориям за неделю и месяц и архив прошлых периодов.',
+          'В «Истории» все траты месяца. Нажми на любую, чтобы исправить или удалить.'] },
+    { art: '<div class="o-card"><div class="k">Можно потратить сегодня</div><div class="v">31,40 <span style="font-family:Inter;font-size:15px;color:var(--muted)">BYN</span></div>' +
+        '<div class="l1"><span>🍜 Кафе и доставка</span><span>120 / 150</span></div><div class="bar"><i class="warn" style="width:80%"></i></div><div class="note">Использовано 80% лимита на месяц</div>' +
+        '<div class="l1"><span>🚕 Транспорт</span><span>64 / 120</span></div><div class="bar"><i style="width:53%"></i></div></div>',
+      h: 'Бюджет и лимиты, если хочется',
+      p: ['Поставь бюджет на месяц, и на главной будет видно, сколько можно потратить сегодня.',
+          'Лимиты на категории предупредят в Telegram, когда потрачено 80%. Всё это по желанию, в «Настройках».'] },
+    { art: '<div class="o-duo"><div class="o-avs"><div class="o-av" style="background:#8C6BFF">А</div><div class="o-av" style="background:#57D2C8">Д</div></div>' +
+        '<div class="o-msg"><small>Бот · понедельник</small>Итоги недели: 284,50 BYN. Больше всего ушло на продукты.</div><div class="chip" style="color:var(--text)">🔥 12 дней подряд</div></div>',
+      h: 'Вдвоём и без забывчивости',
+      p: ['Веди общий бюджет с партнёром: пригласи его кодом в «Настройках».',
+          'Бот пришлёт итоги недели и месяца, а в 21:00 напомнит, если за день ничего не записано.'] }
+  ];
+  let onbIdx = 0;
+  function renderOnb() {
+    const sl = ONB[onbIdx], page = $('onb-page'); page.textContent = '';
+    const pg = el('div', 'page');
+    const art = el('div', 'art'); art.innerHTML = sl.art;   // разметка своя, без данных пользователя
+    const txt = el('div', 'txt'); txt.appendChild(el('h1', '', sl.h)); sl.p.forEach(t => txt.appendChild(el('p', '', t)));
+    pg.append(art, txt); page.appendChild(pg);
+    $('onb-dots').querySelectorAll('i').forEach((d, i) => d.classList.toggle('on', i === onbIdx));
+    const last = onbIdx === ONB.length - 1;
+    $('onb-next').textContent = last ? 'Начать' : 'Далее';
+    $('onb-skip').style.visibility = last ? 'hidden' : 'visible';
+  }
+  function openOnb() {
+    onbIdx = 0;
+    const dots = $('onb-dots'); dots.textContent = ''; ONB.forEach(() => dots.appendChild(el('i')));
+    $('onb').classList.remove('hidden');
+    renderOnb();
+  }
+  function finishOnb() {
+    $('onb').classList.add('hidden');
+    try { localStorage.setItem('onb1', '1'); } catch (e) {}
+    if (state.me && !state.me.onboarded) { state.me.onboarded = true; call({ action: 'onboarded' }).catch(() => {}); }
+  }
+  function onbGo(d) {
+    const n = onbIdx + d;
+    if (n >= ONB.length) { finishOnb(); return; }
+    if (n < 0) return;
+    onbIdx = n; try { tg.HapticFeedback.selectionChanged(); } catch (e) {}
+    renderOnb();
+  }
+  $('onb-next').addEventListener('click', () => onbGo(1));
+  $('onb-skip').addEventListener('click', finishOnb);
+  let touchX = null;
+  $('onb').addEventListener('touchstart', e => { touchX = e.touches[0].clientX; }, { passive: true });
+  $('onb').addEventListener('touchend', e => {
+    if (touchX === null) return;
+    const dx = e.changedTouches[0].clientX - touchX; touchX = null;
+    if (Math.abs(dx) > 50) onbGo(dx < 0 ? 1 : -1);
+  });
+  function maybeOnboard() {
+    let seen = false;
+    try { seen = localStorage.getItem('onb1') === '1'; } catch (e) {}
+    if (canOnb() && !state.me.onboarded && !seen) openOnb();
+    else if (canOnb() && !state.me.onboarded && seen) call({ action: 'onboarded' }).catch(() => {}); // отметка не дошла до сервера в прошлый раз
+  }
+
+  // ---------- Руководство ----------
+  const GUIDE = [
+    ['Как записать трату', 'Нажми «+» внизу, введи сумму, выбери категорию и нажми «Записать». Комментарий (например, «Евроопт») и другую дату можно указать в строке «Комментарий и дата». Последняя выбранная категория запоминается.'],
+    ['Траты в другой валюте', 'Под суммой выбери валюту: USD, EUR, PLN или AMD. Сумма пересчитается в рубли по официальному курсу Нацбанка на дату траты, а в списках будет видна и исходная сумма. Валюта запоминается на 12 часов, потом снова ставится BYN.'],
+    ['Как исправить или удалить трату', 'Открой «Историю» или нажми на трату на главной. Измени сумму, категорию, комментарий или дату и нажми «Сохранить». Чтобы удалить, нажми «Удалить трату» и ещё раз для подтверждения. Исправлять можно траты текущего месяца.'],
+    ['Итоги и архив', 'В «Итогах» переключай неделю и месяц: диаграмма показывает долю каждой категории. Ниже — прошлые недели и месяцы, нажми на период, чтобы увидеть категории.'],
+    ['Бюджет и «можно потратить сегодня»', 'В «Настройках» укажи бюджет на месяц. На главной появится сумма, которую можно потратить сегодня: остаток бюджета делится на оставшиеся дни месяца. Если сегодня потрачено больше нормы, цифра станет красной.'],
+    ['Лимиты по категориям', '«Настройки» → «Лимиты по категориям» → «Добавить лимит». Лимит ставится на неделю или на месяц. Когда потрачено 80%, бот один раз за период напишет в Telegram, а в «Итогах» видна полоска лимита.'],
+    ['Общий бюджет на двоих', '«Настройки» → «Общий бюджет» → «Пригласить партнёра» и отправь код. Партнёр вводит его при регистрации или в своих настройках. Траты, бюджет, лимиты и отчёты станут общими, в «Итогах» видно, кто сколько внёс. Выйти можно там же.'],
+    ['Отчёты, напоминание и серия', 'По понедельникам бот присылает итоги недели, 1-го числа — итоги месяца. В 21:00 он напомнит, если за день ничего не записано (выключается в «Настройках»). Значок 🔥 на главной показывает, сколько дней подряд записываются траты.'],
+    ['Итоги года', 'В «Итогах» нажми «Мой … год», чтобы посмотреть карточки с главными цифрами года. 31 декабря бот пришлёт итоги в Telegram.'],
+    ['Где посмотреть таблицу', 'Если при регистрации была указана почта Google, на неё пришёл доступ к таблице на просмотр. Открыть её можно и с телефона, в браузере.'],
+    ['Если что-то не работает', 'Закрой и снова открой приложение. Если не приходят сообщения от бота, открой чат с ботом и нажми Start. Если не помогло, напиши @vovavov11.']
+  ];
+  function openGuide() {
+    const box = $('guide-list');
+    if (!box.children.length) GUIDE.forEach(g => {
+      const d = el('details', 'faq'); d.appendChild(el('summary', '', g[0])); d.appendChild(el('p', '', g[1])); box.appendChild(d);
+    });
+    $('guide').classList.remove('hidden'); $('guide').scrollTop = 0;
+    try { tg.BackButton.show(); } catch (e) {}
+  }
+  function closeGuide() {
+    $('guide').classList.add('hidden');
+    if (!$('sheet').classList.contains('open')) { try { tg.BackButton.hide(); } catch (e) {} }
+  }
+  $('guide-open').addEventListener('click', openGuide);
+  $('guide-close').addEventListener('click', closeGuide);
+  $('guide-tour').addEventListener('click', () => { closeGuide(); openOnb(); });
+  try { tg.BackButton.onClick(() => { if (!$('guide').classList.contains('hidden')) closeGuide(); }); } catch (e) {}
+  $('contact').addEventListener('click', e => { e.preventDefault(); try { tg.openTelegramLink('https://t.me/vovavov11'); } catch (x) { window.open('https://t.me/vovavov11', '_blank'); } });
+
+  // ---------- Удаление своих данных ----------
+  let wipeArmed = false;
+  $('wipe-open').addEventListener('click', () => {
+    $('wipe-text').textContent = shared()
+      ? 'Ты выйдешь из общего бюджета и из приложения. Общая таблица останется у партнёра вместе со всеми тратами. Отменить это нельзя.'
+      : 'Будут удалены твоя таблица с тратами, бюджет, лимиты и настройки, и ты выйдешь из приложения. Таблица попадёт в корзину Google Диска и удалится окончательно через 30 дней. Отменить это нельзя.';
+    $('wipe-box').classList.remove('hidden'); wipeArmed = false; $('wipe-go').textContent = 'Удалить навсегда';
+    $('wipe-box').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  });
+  $('wipe-cancel').addEventListener('click', () => { $('wipe-box').classList.add('hidden'); });
+  $('wipe-go').addEventListener('click', async () => {
+    if (!wipeArmed) { wipeArmed = true; $('wipe-go').textContent = 'Нажми ещё раз'; return; }
+    const btn = $('wipe-go'); btn.disabled = true; btn.textContent = 'Удаляю…';
+    try {
+      const res = await call({ action: 'deleteMyData' });
+      if (res.ok) {
+        try { ['lastCat', 'lastCur', 'onb1'].forEach(k => localStorage.removeItem(k)); } catch (e) {}
+        $('wipe-box').classList.add('hidden');
+        showRegister(false);
+        $('reg-text').textContent = 'Твои данные удалены. Чтобы снова пользоваться приложением, понадобится новый инвайт-код.';
+      } else toast(errText(res.error));
+    } catch (e) { toast('Не удалось удалить. Проверь интернет.'); }
+    btn.disabled = false; wipeArmed = false; btn.textContent = 'Удалить навсегда';
   });
 
   // ---------- Итоги года ----------

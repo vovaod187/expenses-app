@@ -108,7 +108,8 @@ function allUsers_() {
       sheetId: String(rows[i][2]),
       status: String(rows[i][3]),
       since: rows[i][4],
-      reminder: String(rows[i][5] || '') !== 'off'
+      reminder: String(rows[i][5] || '') !== 'off',
+      onboarded: rows[i][6] !== '' && rows[i][6] !== undefined
     });
   }
   return res;
@@ -208,7 +209,8 @@ function doPost(e) {
         categories: ALLOWED,
         // Версия сервера: приложение включает новые функции, только если сервер их знает
         // (старый сервер принял бы незнакомое действие за запись новой траты)
-        version: 6,
+        version: 7,
+        onboarded: user ? user.onboarded : false,
         currencies: CURRENCIES,
         reminder: user ? user.reminder : true,
         partner: user && user.status === 'active' ? partnerNames_(user) : ''
@@ -226,6 +228,10 @@ function doPost(e) {
       if (action === 'listUsers') return out_(listUsers_());
       return out_(setUserStatus_(body));
     }
+
+    // Действия, которым не нужна таблица пользователя
+    if (action === 'onboarded') return out_(setOnboarded_(user));
+    if (action === 'deleteMyData') return out_(deleteMyData_(user));
 
     // Обычные действия работают с таблицей самого пользователя
     let ss;
@@ -823,6 +829,37 @@ function plural_(n, forms) {
   if (b > 1 && b < 5) return forms[1];
   if (b === 1) return forms[0];
   return forms[2];
+}
+
+// Пользователь посмотрел приветственную брошюру (колонка G в _Users)
+function setOnboarded_(user) {
+  const sh = usersSheet_();
+  if (sh.getRange(1, 7).getValue() === '') sh.getRange(1, 7).setValue('брошюра');
+  sh.getRange(user.row, 7).setValue(new Date());
+  return { ok: true };
+}
+
+// Удаление своих данных по просьбе пользователя.
+// Своя таблица перемещается в корзину Google Диска владельца (Google удаляет её окончательно через 30 дней).
+// В общем бюджете таблица общая: пользователь только выходит из неё, траты остаются у партнёра
+function deleteMyData_(user) {
+  if (isOwner_(user.id)) return { ok: false, error: 'cannot_delete_owner' };
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const sharedWith = activeMembersOf_(user.sheetId).filter(function (u) { return u.id !== user.id; });
+    const others = allUsers_().filter(function (u) { return u.id !== user.id && u.sheetId === user.sheetId; });
+    let trashed = false;
+    if (!others.length && user.sheetId !== registry_().getId()) {
+      try { DriveApp.getFileById(user.sheetId).setTrashed(true); trashed = true; }
+      catch (err) { console.error('Не удалось удалить таблицу пользователя ' + user.id); }
+    }
+    const fresh = getUser_(user.id);
+    if (fresh) usersSheet_().deleteRow(fresh.row);
+    return { ok: true, trashed: trashed, shared: sharedWith.length > 0 };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 // Включить или выключить вечернее напоминание (своё у каждого, даже в общем бюджете)

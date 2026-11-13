@@ -63,12 +63,15 @@ Telegram Mini App для личного учёта трат. Изначальн�
 ### Итоги года (этап 6)
 `yearRecap_(ss, year)`: сумма и число трат, дней с записями, в среднем в день, категории по убыванию, самый дорогой месяц и день, самая крупная трата, самая длинная серия, «чаще всего» (комментарий, встречающийся от 3 раз, без учёта регистра), траты в валюте, кто сколько внёс, сумма за прошлый год. `sendYearRecaps` по триггеру 31-го числа около 12:00 (создаётся один раз `setupYearTrigger`), отправляет только 31 декабря, всем активным пользователям с тратами за год. В приложении: кнопка «Мой <год> год» в Итогах (всегда; пока год идёт — данные на сегодня), баннер на главной с 20 декабря по 15 января (в январе — прошлый год), просмотр карточками (тап справа — дальше, слева — назад), «Поделиться» через Telegram. Включается при `whoami.version >= 6`.
 
+### Знакомство, руководство и данные
+Брошюра из 5 экранов показывается один раз каждому (и новым, и уже зарегистрированным): отметка в `_Users`, колонка G «брошюра» (`onboarded`), плюс запасная отметка в браузере. Внизу Настроек: раздел «Как всё устроено» (на чём работает, где данные, что технически владелец имеет доступ к таблицам, контакт @vovavov11), ссылка «Как пользоваться» (руководство из 11 разделов и повтор знакомства) и «Удалить мои данные» (не для владельца). `deleteMyData`: своя таблица уходит в корзину Диска владельца (окончательно через 30 дней), строка в `_Users` удаляется; в общем бюджете пользователь только выходит, таблица остаётся у партнёра. Включается при `whoami.version >= 7`.
+
 ## 4. Ключевые файлы и функции
 
 Файлы: `Code.gs` (бэкенд, ~520 строк), `index.html` (фронтенд, ~350 строк), `DEPLOY.md` (инструкция запуска), `PROJECT_SUMMARY.md` (этот файл).
 
 ### `Code.gs`
-- **Вход:** `doPost(e)`. Действия: `whoami`, `register` (доступны без регистрации); `add`, `summary`, `archive`, `history`, `update`, `delete`, `setLimit`, `setBudget`, `partnerInvite`, `joinPartner`, `leavePartner`, `setReminder`, `rates`, `yearRecap` (обычные); `createInvite`, `listUsers`, `setUserStatus` (только `OWNER_ID`).
+- **Вход:** `doPost(e)`. Действия: `whoami`, `register` (доступны без регистрации); `add`, `summary`, `archive`, `history`, `update`, `delete`, `setLimit`, `setBudget`, `partnerInvite`, `joinPartner`, `leavePartner`, `setReminder`, `rates`, `yearRecap`, `onboarded`, `deleteMyData` (обычные); `createInvite`, `listUsers`, `setUserStatus` (только `OWNER_ID`).
 - **Коды ошибок:** `denied`, `not_registered`, `disabled`, `bad_invite`, `too_many_attempts`, `bad_email`, `create_failed`, `no_access_to_sheet`, `already_registered`, `cannot_change_owner`, `no_such_user`, `bad data`, `server error`.
 - **Реестр:** `usersSheet_`, `invitesSheet_`, `allUsers_`, `getUser_`, `userSs_` (открывает таблицу пользователя), `displayName_`, `visible_` (определяет невидимые имена).
 - **Регистрация:** `register_` (проверка инвайта, лимит 5 неудачных попыток в час через `CacheService`, `LockService`), `createUserSheet_`, `usersFolder_`, `ensureSheets_`. Если указана почта, выдаётся доступ на просмотр (`addViewer`); при неудаче регистрация всё равно проходит.
