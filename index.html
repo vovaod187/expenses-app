@@ -1333,8 +1333,7 @@
     const text = 'Мой ' + recap.year + ' год в тратах: ' + fmt(recap.total) + ' BYN, ' + recap.count + ' ' + plural(recap.count, ['трата', 'траты', 'трат']) +
       (top ? '. Больше всего на ' + top.name.toLowerCase() + ' (' + pct(top.sum, recap.total) + '%)' : '') +
       (recap.longestStreak >= 2 ? '. Самая длинная серия записей: ' + recap.longestStreak + ' ' + plural(recap.longestStreak, ['день', 'дня', 'дней']) : '') + '.';
-    const url = 'https://t.me/share/url?url=' + encodeURIComponent(BOT_URL) + '&text=' + encodeURIComponent(text);
-    try { tg.openTelegramLink(url); } catch (x) { window.open(url, '_blank'); }
+    shareTg(text + '\n' + BOT_URL);
   });
 
   // ---------- Напоминание ----------
@@ -1348,6 +1347,20 @@
     } catch (e) { sw.setAttribute('aria-checked', !on); toast('Не удалось сохранить. Проверь интернет.'); }
     sw.disabled = false;
   });
+
+  // ---------- Поделиться и скопировать ----------
+  // Весь текст передаём в параметре url: тогда Telegram вставит его в сообщение целиком, без дубля ссылки
+  function shareTg(text) {
+    const url = 'https://t.me/share/url?url=' + encodeURIComponent(text);
+    try { tg.openTelegramLink(url); } catch (e) { window.open(url, '_blank'); }
+  }
+  async function copyText(text) {
+    try { await navigator.clipboard.writeText(text); return true; } catch (e) {}
+    try {
+      const ta = el('textarea'); ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select(); const ok = document.execCommand('copy'); ta.remove(); return ok;
+    } catch (e) { return false; }
+  }
 
   // ---------- Общий бюджет ----------
   const BOT_URL = 'https://t.me/expensesforvovibot';
@@ -1368,10 +1381,7 @@
       box.appendChild(el('div', 'code', data.code));
       box.appendChild(el('p', 'muted small', 'Код одноразовый, действует ' + data.days + ' дней. Партнёр вводит его при регистрации или в настройках, если уже пользуется приложением.'));
       const send = el('button', 'cta', 'Отправить приглашение'); send.style.marginTop = '10px';
-      send.addEventListener('click', () => {
-        const url = 'https://t.me/share/url?url=' + encodeURIComponent(BOT_URL) + '&text=' + encodeURIComponent(text);
-        try { tg.openTelegramLink(url); } catch (e) { window.open(url, '_blank'); }
-      });
+      send.addEventListener('click', () => shareTg(text));
       box.appendChild(send);
     } catch (e) { toast('Не удалось создать код. Проверь интернет.'); }
     btn.disabled = false;
@@ -1434,7 +1444,18 @@
       if (!data.ok) { toast(errText(data.error)); return; }
       const box = $('adm-code'); box.textContent = '';
       box.appendChild(el('div', 'code', data.code));
-      box.appendChild(el('p', 'muted', 'Код одноразовый, действует ' + data.days + ' дней. Нажми на него, чтобы выделить.'));
+      box.appendChild(el('p', 'muted', 'Код одноразовый, действует ' + data.days + ' дней.'));
+      const text = 'Привет! Приглашаю в «Траты» — приложение для учёта расходов прямо в Telegram.\n' +
+        '1. Открой бота ' + BOT_URL.replace('https://', '') + ' и нажми Start.\n' +
+        '2. Открой приложение и введи код: ' + data.code + '\n\n' +
+        'Код одноразовый, действует ' + data.days + ' дней.';
+      const row = el('div', 'inrow'); row.style.marginTop = '10px';
+      const copy = el('button', 'btn2', 'Скопировать');
+      copy.addEventListener('click', async () => toast(await copyText(text) ? 'Текст приглашения скопирован' : 'Не удалось скопировать. Выдели код вручную.'));
+      const send = el('button', 'cta', 'Отправить'); send.style.height = '48px'; send.style.borderRadius = '14px';
+      send.addEventListener('click', () => shareTg(text));
+      row.style.marginBottom = '14px';
+      row.append(copy, send); box.appendChild(row);
     } catch (e) { toast('Не удалось создать код.'); }
   });
 
